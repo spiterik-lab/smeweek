@@ -1,0 +1,5 @@
+Options -Indexes
+<Files "config.php">
+  # config.php only defines settings and prints nothing, but keep it off the web anyway
+  Require all denied
+</Files>

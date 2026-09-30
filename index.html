@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0d1726">
+<meta name="robots" content="noindex">
+<title>SME Constellation</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="assets/app.css?v=1">
+</head>
+<body data-page="attendee">
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <h1>SME Constellation</h1>
+      <p>Making AI work for SMEs · 24 November 2026</p>
+    </div>
+    <div class="counts" aria-live="polite">
+      <div><b id="cPeople">0</b><span>people</span></div>
+      <div><b id="cLinks">0</b><span>connections</span></div>
+      <div><b id="cSectors">0</b><span>sectors</span></div>
+    </div>
+  </header>
+
+  <nav class="tabs" role="tablist" aria-label="Views">
+    <button role="tab" aria-selected="true" data-view="join">Add yourself</button>
+    <button role="tab" aria-selected="false" data-view="matches">My matches</button>
+    <button role="tab" aria-selected="false" data-view="map">The map</button>
+  </nav>
+
+  <section id="view-join">
+    <form class="join" id="joinForm" novalidate>
+      <div class="field full"><h2 class="section-h">Add yourself to the map</h2>
+        <p class="note">Takes about 30 seconds, no sign-up needed. Only what you enter here is shown to others in the room.</p></div>
+      <div class="field"><label class="lbl" for="fName">Name</label><input type="text" id="fName" autocomplete="name" maxlength="60" required></div>
+      <div class="field"><label class="lbl" for="fCompany">Organisation</label><input type="text" id="fCompany" autocomplete="organization" maxlength="80" required></div>
+      <div class="field"><label class="lbl" for="fRole">Role</label><input type="text" id="fRole" maxlength="80" placeholder="e.g. Managing Director"></div>
+      <div class="field"><label class="lbl" for="fSector">Sector</label><select id="fSector" required></select></div>
+      <div class="field full"><span class="lbl" id="lblOffer">I can offer (pick up to 3)</span><div class="chips" id="chipsOffer" role="group" aria-labelledby="lblOffer"></div></div>
+      <div class="field full"><span class="lbl" id="lblNeed">I'm looking for (pick up to 3)</span><div class="chips" id="chipsNeed" role="group" aria-labelledby="lblNeed"></div></div>
+      <div class="field full"><label class="lbl" for="fWork">What I'm working on (optional)</label><textarea id="fWork" maxlength="200" placeholder="e.g. Automating bookings for our three guesthouses"></textarea></div>
+      <div class="field full"><label class="consent"><input type="checkbox" id="fConsent"> I agree that my name, organisation, role and answers are shown on this map to other attendees, and that they are deleted after the event.</label></div>
+      <div class="field full row"><button class="btn primary" type="submit" id="btnSave">Add me to the map</button><button class="btn ghost" type="button" id="btnRemoveMe" hidden>Remove me</button></div>
+      <div class="field full"><span class="note" id="joinMsg" aria-live="polite"></span></div>
+    </form>
+  </section>
+
+  <section id="view-matches" hidden>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <h2 class="section-h" id="matchTitle">Your three people to meet</h2>
+      <p class="note" id="matchIntro"></p>
+      <div class="matches" id="matchList"></div>
+    </div>
+  </section>
+
+  <section id="view-map" hidden>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div class="sky" id="sky">
+        <canvas aria-label="Network map of attendees, coloured by sector, with lines between people who could help each other"></canvas>
+        <div class="empty" hidden><strong>The sky is empty for now</strong><span>Each person who joins becomes a star.</span><button class="btn primary" id="emptyJoin" type="button">Add yourself</button></div>
+        <div class="legend"></div>
+      </div>
+      <label class="toggle"><input type="checkbox" id="exToggle"> Show example attendees (fictional, for testing)</label>
+    </div>
+  </section>
+
+  <footer>Profiles are shown only to people at this event and are deleted afterwards. You can remove yours at any time from “Add yourself”.</footer>
+</div>
+<script src="assets/app.js?v=1"></script>
+</body>
+</html>
