@@ -1,8 +1,8 @@
 Options -Indexes
-<Files "config.php">
-  # config.php only defines settings and prints nothing, but keep it off the web anyway
+<FilesMatch "^(config|event)\.php$">
+  # These only define settings and print nothing, but keep them off the web anyway
   Require all denied
-</Files>
+</FilesMatch>
 
 # The app now lives at https://smeweek.tetra.com.mt/ - the old address tetra.com.mt/smeweek/ redirects there.
 <IfModule mod_rewrite.c>
