@@ -3,3 +3,10 @@ Options -Indexes
   # config.php only defines settings and prints nothing, but keep it off the web anyway
   Require all denied
 </Files>
+
+# The app now lives at https://smeweek.tetra.com.mt/ - the old address tetra.com.mt/smeweek/ redirects there.
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteCond %{HTTP_HOST} ^(www\.)?tetra\.com\.mt$ [NC]
+  RewriteRule ^(.*)$ https://smeweek.tetra.com.mt/$1 [R=301,L]
+</IfModule>

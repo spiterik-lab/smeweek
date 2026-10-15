@@ -11,10 +11,14 @@ WHAT'S IN THE FOLDER
   (created automatically), so updates from GitHub never wipe them.
 
 1. DEPLOYMENT
-   Deployed automatically from GitHub (spiterik-lab/smeweek, branch main) into
-   tetra.com.mt/public_html/smeweek via hPanel > Advanced > Git. Every push goes live.
-   Live address:  https://tetra.com.mt/smeweek/
-   Big screen:    https://tetra.com.mt/smeweek/screen.html
+   Deployed automatically from GitHub (spiterik-lab/smeweek, branch main) into its own
+   Hostinger website smeweek.tetra.com.mt (domains/smeweek.tetra.com.mt/public_html)
+   via hPanel > Advanced > Git. Every push goes live. It is separate from the main
+   tetra.com.mt site, so revamping that site does not touch the app.
+   Live address:  https://smeweek.tetra.com.mt/
+   Big screen:    https://smeweek.tetra.com.mt/screen.html
+   Saved data:    domains/smeweek.tetra.com.mt/smeweek-data (outside the web folder)
+   The old address tetra.com.mt/smeweek/ redirects to the new one (.htaccess).
 
 3. TEST
    - Open the address on your phone and add yourself.

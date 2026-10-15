@@ -9,7 +9,9 @@ header('X-Content-Type-Options: nosniff');
 // Saved data lives OUTSIDE the deployed folder so GitHub deployments never wipe it.
 // Preferred: next to public_html (not reachable from the web). Fallback: a protected folder beside the app.
 function data_dir(): string {
-  $outside = dirname(__DIR__, 2) . '/smeweek-data';
+  // App at a site's document root (smeweek.tetra.com.mt/public_html): data goes next to public_html.
+  // App in a subfolder (old tetra.com.mt/public_html/smeweek): data goes next to that site's public_html.
+  $outside = (basename(__DIR__) === 'public_html' ? dirname(__DIR__) : dirname(__DIR__, 2)) . '/smeweek-data';
   if ((is_dir($outside) || @mkdir($outside, 0755, true)) && is_writable($outside)) return $outside;
   $beside = dirname(__DIR__) . '/smeweek-data';
   if (!is_dir($beside)) @mkdir($beside, 0755, true);
