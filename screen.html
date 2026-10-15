@@ -4,18 +4,21 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex">
-<title>SME Constellation – Big Screen</title>
+<title>Big screen · SME Constellation</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
-<link rel="stylesheet" href="assets/app.css?v=1">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700&display=swap">
+<link rel="stylesheet" href="assets/app.css?v=2">
 </head>
 <body data-page="screen" class="screen">
+<img class="swash" src="assets/img/swash.webp" alt="" aria-hidden="true">
 <div class="wrap">
   <header class="top">
     <div class="brand">
-      <h1>SME Constellation</h1>
-      <p><span id="evTitle">Making AI work for SMEs</span> · live networking map</p>
+      <h1>Making <em>AI</em> work for SMEs</h1>
+      <p>SME Constellation · live networking map</p>
     </div>
+    <img class="brand-logos" src="assets/img/brand-logos.png" alt="Malta Employers · SME Week Malta 2026" width="1000" height="125">
     <div class="counts" aria-live="polite">
       <div><b id="cPeople">0</b><span>people</span></div>
       <div><b id="cLinks">0</b><span>connections</span></div>
@@ -29,7 +32,7 @@
       <div class="empty" hidden><strong>Scan the code to become the first star</strong><span>Lines appear between people who can help each other.</span></div>
       <div class="legend"></div>
     </div>
-    <aside style="display:flex;flex-direction:column;gap:12px;min-width:0">
+    <aside class="side">
       <div class="panel">
         <span class="eyebrow">Scan to join</span>
         <div class="qr" id="qr"></div>
@@ -38,7 +41,7 @@
       <div class="panel">
         <span class="eyebrow">AI reads the room</span>
         <button class="btn primary" id="btnInsight" type="button" hidden>Read the room</button>
-        <p id="aiOff" hidden>AI summary is off. Add an API key in config.php to switch it on.</p>
+        <p id="aiOff" hidden>AI is switched off. Open “Organiser” below, unlock it and save your Claude API key.</p>
         <div class="insight" id="insight" aria-live="polite"></div>
       </div>
       <div class="panel">
@@ -51,25 +54,36 @@
         <form id="adminForm" class="row" style="margin-top:8px"><div id="adminLogin" class="row" style="width:100%">
           <input type="password" id="adminKey" placeholder="Organiser password" autocomplete="off" style="flex:1;min-width:0">
           <button class="btn ghost" type="submit">Unlock</button></div></form>
-        <div id="adminTools" hidden style="display:flex;flex-direction:column;gap:8px">
-          <form id="keyForm" style="display:flex;flex-direction:column;gap:6px">
+        <div id="adminTools" hidden class="stack">
+          <form id="keyForm" class="stack tight">
             <label class="lbl" for="apiKey">Claude API key (for the AI features)</label>
             <div class="row"><input type="password" id="apiKey" placeholder="sk-ant-…" autocomplete="off" style="flex:1;min-width:0"><button class="btn ghost" type="submit">Save key</button></div>
             <span class="note" id="keyState"></span>
           </form>
+          <a class="btn ghost" href="host.html" target="_blank" rel="noopener">Open the host's question view</a>
           <button class="btn ghost" id="btnExport" type="button">Download attendee list (CSV)</button>
           <button class="btn danger" id="btnClear" type="button">Clear all profiles</button>
           <div class="confirm" id="clearConfirm" hidden>
-            <span class="note warn">This permanently deletes every saved profile.</span>
+            <span class="note warn">This permanently deletes every saved profile and number swap.</span>
             <div class="row"><button class="btn danger" id="btnClearYes" type="button">Delete all</button><button class="btn ghost" id="btnClearNo" type="button">Cancel</button></div>
+          </div>
+          <button class="btn danger" id="btnQClear" type="button">Clear all questions</button>
+          <div class="confirm" id="qClearConfirm" hidden>
+            <span class="note warn">This permanently deletes every audience question.</span>
+            <div class="row"><button class="btn danger" id="btnQClearYes" type="button">Delete all</button><button class="btn ghost" id="btnQClearNo" type="button">Cancel</button></div>
           </div>
         </div>
         <span class="note" id="adminMsg"></span>
       </details>
     </aside>
   </section>
+
+  <footer class="partners" aria-label="In conjunction with">
+    <img src="assets/img/partners.png" alt="In conjunction with the Ministry for the Economy, Technology and Strategic Projects, MDIA, MBR, National Skills Council, Identità, Family Business Office, Tech.mt, APS Bank, MDB, NSO, Malta Enterprise, Business First, Xjenza Malta and GWU" width="2200" height="353">
+    <img src="assets/img/partner-aigov.png" alt="Government of Malta, Artificial Intelligence Governance Unit" width="600" height="139">
+  </footer>
 </div>
 <script src="assets/qrcode.js"></script>
-<script src="assets/app.js?v=1"></script>
+<script src="assets/app.js?v=2"></script>
 </body>
 </html>

@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#27286a">
+<meta name="robots" content="noindex">
+<title>Host questions · SME Constellation</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700&display=swap">
+<link rel="stylesheet" href="assets/app.css?v=2">
+</head>
+<body data-page="host" class="host-page">
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <h1>Audience <em>questions</em></h1>
+      <p>Host view · Making AI work for SMEs</p>
+    </div>
+  </header>
+
+  <form id="hostForm" class="panel login" hidden>
+    <label class="lbl" for="hostKey">Organiser password</label>
+    <div class="row"><input type="password" id="hostKey" autocomplete="off" style="flex:1;min-width:0"><button class="btn primary" type="submit">Unlock</button></div>
+    <span class="note warn" id="hostMsg" aria-live="polite"></span>
+  </form>
+
+  <div id="hostMain" hidden class="stack">
+    <nav class="tabs" id="hostTabs" aria-label="Sessions"></nav>
+    <h2 class="section-h" id="hostTitle"></h2>
+    <div class="row"><button class="btn primary" id="btnGroup" type="button" hidden>Group similar questions with AI</button><button class="btn ghost" id="btnLock" type="button">Lock</button></div>
+    <div class="insight panel" id="hostSummary" aria-live="polite"></div>
+    <div class="qlist" id="hostList"></div>
+  </div>
+</div>
+<script src="assets/app.js?v=2"></script>
+</body>
+</html>

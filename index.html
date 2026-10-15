@@ -3,19 +3,22 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#0d1726">
+<meta name="theme-color" content="#27286a">
 <meta name="robots" content="noindex">
-<title>SME Constellation</title>
+<title>Making AI work for SMEs · SME Constellation</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
-<link rel="stylesheet" href="assets/app.css?v=1">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700&display=swap">
+<link rel="stylesheet" href="assets/app.css?v=2">
 </head>
 <body data-page="attendee">
+<img class="swash" src="assets/img/swash.webp" alt="" aria-hidden="true">
 <div class="wrap">
   <header class="top">
+    <img class="brand-logos" src="assets/img/brand-logos.png" alt="Malta Employers · SME Week Malta 2026" width="1000" height="125">
     <div class="brand">
-      <h1>SME Constellation</h1>
-      <p>Making AI work for SMEs · 24 November 2026</p>
+      <h1>Making <em>AI</em> work for SMEs</h1>
+      <p>From policy to practice · Tuesday 24 November 2026 · Trident Park</p>
     </div>
     <div class="counts" aria-live="polite">
       <div><b id="cPeople">0</b><span>people</span></div>
@@ -26,37 +29,49 @@
 
   <nav class="tabs" role="tablist" aria-label="Views">
     <button role="tab" aria-selected="true" data-view="join">Add yourself</button>
-    <button role="tab" aria-selected="false" data-view="matches">My matches</button>
+    <button role="tab" aria-selected="false" data-view="matches">My matches <span class="badge" id="matchBadge" hidden></span></button>
     <button role="tab" aria-selected="false" data-view="map">The map</button>
+    <button role="tab" aria-selected="false" data-view="agenda">Agenda</button>
+    <button role="tab" aria-selected="false" data-view="ask">Ask a question</button>
   </nav>
 
   <section id="view-join">
     <form class="join" id="joinForm" novalidate>
-      <div class="field full"><h2 class="section-h">Add yourself to the map</h2>
-        <p class="note">Takes about 30 seconds, no sign-up needed. Only what you enter here is shown to others in the room.</p></div>
+      <div class="field full"><span class="eyebrow">SME Constellation</span><h2 class="section-h">Add yourself to the map</h2>
+        <p class="note">Takes about 30 seconds, no sign-up needed. You'll see the people in the room you should meet.</p></div>
       <div class="field"><label class="lbl" for="fName">Name</label><input type="text" id="fName" autocomplete="name" maxlength="60" required></div>
       <div class="field"><label class="lbl" for="fCompany">Organisation</label><input type="text" id="fCompany" autocomplete="organization" maxlength="80" required></div>
-      <div class="field"><label class="lbl" for="fRole">Role</label><input type="text" id="fRole" maxlength="80" placeholder="e.g. Managing Director"></div>
-      <div class="field"><label class="lbl" for="fSector">Sector</label><select id="fSector" required></select></div>
-      <div class="field full"><span class="lbl" id="lblOffer">I can offer (pick up to 3)</span><div class="chips" id="chipsOffer" role="group" aria-labelledby="lblOffer"></div></div>
-      <div class="field full"><span class="lbl" id="lblNeed">I'm looking for (pick up to 3)</span><div class="chips" id="chipsNeed" role="group" aria-labelledby="lblNeed"></div></div>
-      <div class="field full"><label class="lbl" for="fWork">What I'm working on (optional)</label><textarea id="fWork" maxlength="200" placeholder="e.g. Automating bookings for our three guesthouses"></textarea></div>
-      <div class="field full"><label class="consent"><input type="checkbox" id="fConsent"> I agree that my name, organisation, role and answers are shown on this map to other attendees, and that they are deleted after the event.</label></div>
+      <div class="field"><label class="lbl" for="fMobile">Mobile number</label><input type="tel" id="fMobile" autocomplete="tel" maxlength="20" placeholder="e.g. 9912 3456" inputmode="tel">
+        <span class="hint">Only shared with people you both agree to swap numbers with.</span></div>
+      <div class="field"><label class="lbl" for="fRole">Role <span class="opt">optional</span></label><input type="text" id="fRole" maxlength="80" placeholder="e.g. Managing Director"></div>
+      <div class="field"><label class="lbl" for="fSector">Sector <span class="opt">optional</span></label><select id="fSector"></select></div>
+      <div class="field speaker-f"><label class="consent"><input type="checkbox" id="fSpeaker"> I'm a speaker or panellist today</label></div>
+
+      <fieldset class="field full why">
+        <legend class="lbl-big">Why are you attending? <span class="opt">tick all that apply</span></legend>
+        <span class="lbl">To offer or share</span><div class="chips" id="chipsGive"></div>
+        <span class="lbl">To find or learn</span><div class="chips" id="chipsGet"></div>
+        <div class="chips" id="chipsNet"></div>
+      </fieldset>
+
+      <div class="field full"><label class="lbl" for="fWork">What I'm working on <span class="opt">optional</span></label><textarea id="fWork" maxlength="200" placeholder="e.g. Automating bookings for our three guesthouses"></textarea></div>
+      <div class="field full"><label class="consent"><input type="checkbox" id="fConsent"> <span id="consentText"></span></label></div>
       <div class="field full row"><button class="btn primary" type="submit" id="btnSave">Add me to the map</button><button class="btn ghost" type="button" id="btnRemoveMe" hidden>Remove me</button></div>
       <div class="field full"><span class="note" id="joinMsg" aria-live="polite"></span></div>
     </form>
   </section>
 
   <section id="view-matches" hidden>
-    <div style="display:flex;flex-direction:column;gap:12px">
-      <h2 class="section-h" id="matchTitle">Your three people to meet</h2>
-      <p class="note" id="matchIntro"></p>
+    <div class="stack">
+      <h2 class="section-h" id="matchTitle">Your people to meet</h2>
+      <p class="note" id="matchIntro" aria-live="polite"></p>
+      <div class="incoming panel" id="incoming" hidden></div>
       <div class="matches" id="matchList"></div>
     </div>
   </section>
 
   <section id="view-map" hidden>
-    <div style="display:flex;flex-direction:column;gap:12px">
+    <div class="stack">
       <div class="sky" id="sky">
         <canvas aria-label="Network map of attendees, coloured by sector, with lines between people who could help each other"></canvas>
         <div class="empty" hidden><strong>The sky is empty for now</strong><span>Each person who joins becomes a star.</span><button class="btn primary" id="emptyJoin" type="button">Add yourself</button></div>
@@ -66,8 +81,30 @@
     </div>
   </section>
 
+  <section id="view-agenda" hidden>
+    <div class="stack">
+      <h2 class="section-h">Agenda</h2>
+      <p class="note">Tuesday 24 November 2026 · Trident Park Conference Hall, Mriehel</p>
+      <div class="agenda" id="agendaList"></div>
+    </div>
+  </section>
+
+  <section id="view-ask" hidden>
+    <div class="stack ask">
+      <h2 class="section-h">Ask a question</h2>
+      <form id="qForm" class="qform panel">
+        <label class="lbl" for="qSession">Session</label><select id="qSession"></select>
+        <label class="lbl" for="qText">Your question</label><textarea id="qText" maxlength="280" placeholder="Keep it short so the moderator can read it out"></textarea>
+        <label class="lbl" for="qName">Your name <span class="opt">optional, leave blank to stay anonymous</span></label><input type="text" id="qName" maxlength="60" autocomplete="name">
+        <div class="row"><button class="btn primary" id="qSend" type="submit">Send question</button><span class="note" id="qMsg" aria-live="polite"></span></div>
+      </form>
+      <h3 class="sub">Questions so far <span class="opt">vote for the ones you want asked</span></h3>
+      <div class="qlist" id="qList"></div>
+    </div>
+  </section>
+
   <footer>Profiles are shown only to people at this event and are deleted afterwards. You can remove yours at any time from “Add yourself”.</footer>
 </div>
-<script src="assets/app.js?v=1"></script>
+<script src="assets/app.js?v=2"></script>
 </body>
 </html>

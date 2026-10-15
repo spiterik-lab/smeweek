@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 require __DIR__ . '/config.php';
+require __DIR__ . '/event.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
@@ -19,12 +20,12 @@ function data_dir(): string {
   return $beside;
 }
 define('DATA_DIR', data_dir());
-const SECTORS = ["Tourism & hospitality","Gaming & digital entertainment","Shipping & maritime","Blue & green economy",
-  "Financial services","Aviation & manufacturing","Retail & trade","Professional services","Tech & IT",
-  "Public bodies & support","Education & training","Other"];
-const TOPICS = ["AI know-how","Automation","Data & analytics","Cybersecurity","Digital marketing","Software development",
-  "Funding & grants","Investment","Training & upskilling","Recruitment & talent","Legal & compliance",
-  "Export & new markets","Clients & customers","Suppliers & partners","Sustainability / ESG","Mentoring"];
+define('SECTOR_NAMES', array_column(SECTORS, 0));
+define('INTEREST_IDS', array_merge(
+  array_map(fn($k) => "$k:give", array_keys(INTERESTS)),
+  array_map(fn($k) => "$k:get", array_keys(INTERESTS)),
+  ['network']
+));
 
 function out(array $a, int $code = 200): never { http_response_code($code); echo json_encode($a, JSON_UNESCAPED_UNICODE); exit; }
 function fail(string $msg, int $code = 400): never { out(['ok' => false, 'error' => $msg], $code); }
@@ -79,15 +80,37 @@ function clean(mixed $v, int $max): string {
   $s = trim(preg_replace('/\s+/u', ' ', (string)($v ?? '')));
   return mb_substr(strip_tags($s), 0, $max);
 }
-function pick_list(mixed $v, array $allowed): array {
-  if (!is_array($v)) return [];
-  return array_values(array_slice(array_unique(array_filter($v, fn($x) => is_string($x) && in_array($x, $allowed, true))), 0, 3));
+function clean_phone(mixed $v): string {
+  $s = preg_replace('/[^0-9+ ]/', '', (string)($v ?? ''));
+  $s = trim(preg_replace('/\s+/', ' ', $s));
+  return mb_substr($s, 0, 20);
 }
+function pick_interests(mixed $v): array {
+  if (!is_array($v)) return [];
+  return array_values(array_unique(array_filter($v, fn($x) => is_string($x) && in_array($x, INTEREST_IDS, true))));
+}
+/** What everyone in the room may see. The mobile number is never included. */
 function public_person(string $id, array $p): array {
-  return ['id' => $id, 'name' => $p['name'], 'company' => $p['company'], 'role' => $p['role'], 'sector' => $p['sector'],
-          'offer' => $p['offer'], 'need' => $p['need'], 'work' => $p['work']];
+  return ['id' => $id, 'name' => $p['name'], 'company' => $p['company'], 'role' => $p['role'] ?? '', 'sector' => $p['sector'] ?? 'Other',
+          'interests' => $p['interests'] ?? [], 'speaker' => !empty($p['speaker']), 'work' => $p['work'] ?? '', 'hasMobile' => ($p['mobile'] ?? '') !== ''];
+}
+/** Interests as words, for the AI prompts and the export. */
+function interest_words(array $ids): array {
+  $w = [];
+  foreach ($ids as $i) {
+    if ($i === 'network') { $w[] = NETWORKING_LABEL; continue; }
+    [$k, $side] = explode(':', $i) + ['', ''];
+    if (isset(INTERESTS[$k])) $w[] = INTERESTS[$k][$side === 'give' ? 0 : 1];
+  }
+  return $w;
 }
 function owns(array $p, string $token): bool { return $token !== '' && hash_equals($p['token_hash'], hash('sha256', $token)); }
+function me_or_fail(array $d, array $body): string {
+  $id = (string)($body['id'] ?? ''); $token = (string)($body['token'] ?? '');
+  if (!isset($d['people'][$id]) || !owns($d['people'][$id], $token)) fail('Add yourself to the map first.', 403);
+  return $id;
+}
+function is_admin(array $body): bool { return hash_equals(ADMIN_KEY_HASH, hash('sha256', (string)($body['key'] ?? ''))); }
 
 function claude(string $prompt, int $maxTokens = 350): string {
   $ch = curl_init('https://api.anthropic.com/v1/messages');
@@ -113,9 +136,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   if (!is_array($body)) fail('Bad request.');
 }
 $empty = ['v' => 0, 'people' => []];
+$emptyQ = ['v' => 0, 'items' => []];
 
 switch ($action) {
 
+  // ---------- event content (questions, sectors, agenda) ----------
+  case 'config': {
+    $interests = [];
+    foreach (INTERESTS as $k => [$give, $get, $noun]) $interests[] = ['key' => $k, 'give' => $give, 'get' => $get, 'noun' => $noun];
+    $agenda = array_map(fn($a) => ['time' => $a[0], 'mins' => $a[1], 'title' => $a[2], 'who' => $a[3], 'qa' => $a[4]], AGENDA);
+    $qa = []; foreach (QA_SESSIONS as $k => $label) $qa[] = ['key' => $k, 'label' => $label];
+    out(['ok' => true, 'title' => EVENT_TITLE, 'date' => EVENT_DATE, 'interests' => $interests, 'networking' => NETWORKING_LABEL,
+         'sectors' => SECTORS, 'agenda' => $agenda, 'qa' => $qa, 'consent' => CONSENT_TEXT]);
+  }
+
+  // ---------- networking map ----------
   case 'list': {
     $d = read_store('people', $empty);
     $since = (int)($_GET['since'] ?? -1);
@@ -130,12 +165,15 @@ switch ($action) {
     if (empty($body['consent'])) fail('Tick the consent box so others can see your details.');
     $p = [
       'name' => clean($body['name'] ?? '', 60), 'company' => clean($body['company'] ?? '', 80),
+      'mobile' => clean_phone($body['mobile'] ?? ''),
       'role' => clean($body['role'] ?? '', 80), 'work' => clean($body['work'] ?? '', 200),
-      'sector' => in_array($body['sector'] ?? '', SECTORS, true) ? $body['sector'] : '',
-      'offer' => pick_list($body['offer'] ?? [], TOPICS), 'need' => pick_list($body['need'] ?? [], TOPICS),
+      'sector' => in_array($body['sector'] ?? '', SECTOR_NAMES, true) ? $body['sector'] : 'Other',
+      'interests' => pick_interests($body['interests'] ?? []),
+      'speaker' => !empty($body['speaker']),
     ];
-    if ($p['name'] === '' || $p['company'] === '' || $p['sector'] === '') fail('Add your name, organisation and sector.');
-    if (!$p['offer'] || !$p['need']) fail("Pick at least one thing you can offer and one you're looking for.");
+    if ($p['name'] === '' || $p['company'] === '') fail('Add your name and organisation.');
+    if ($p['mobile'] !== '' && strlen(preg_replace('/\D/', '', $p['mobile'])) < 8) fail('That mobile number looks too short.');
+    if (!$p['interests']) fail('Tick at least one reason you are attending.');
     $id = (string)($body['id'] ?? ''); $token = (string)($body['token'] ?? '');
     $res = with_store('people', function (&$d) use ($p, $id, $token) {
       if ($id !== '' && isset($d['people'][$id]) && owns($d['people'][$id], $token)) {
@@ -157,26 +195,64 @@ switch ($action) {
       if (!isset($d['people'][$id]) || !owns($d['people'][$id], $token)) return false;
       unset($d['people'][$id]); $d['v']++; return true;
     }, $empty);
+    if ($done) with_store('contacts', function (&$c) use ($id) {
+      unset($c[$id]); foreach ($c as $k => $to) { unset($c[$k][$id]); if (!$c[$k]) unset($c[$k]); }
+    }, []);
     out(['ok' => true, 'removed' => $done]);
   }
 
+  // ---------- swapping mobile numbers (both people must agree) ----------
+  case 'connect': {
+    limit('connect', 30, 600);
+    $d = read_store('people', $empty);
+    $me = me_or_fail($d, $body);
+    $other = (string)($body['other'] ?? '');
+    if (!isset($d['people'][$other]) || $other === $me) fail('That person is no longer on the map.', 404);
+    if (($d['people'][$me]['mobile'] ?? '') === '') fail('Add your mobile number under "Add yourself" first, so you have a number to swap.');
+    $undo = !empty($body['undo']);
+    with_store('contacts', function (&$c) use ($me, $other, $undo) {
+      if ($undo) { unset($c[$me][$other]); if (empty($c[$me])) unset($c[$me]); }
+      else $c[$me][$other] = time();
+    }, []);
+    out(['ok' => true]);
+  }
+
+  case 'contacts': {
+    $d = read_store('people', $empty);
+    $me = me_or_fail($d, $body);
+    $c = read_store('contacts', []);
+    $mine = array_keys($c[$me] ?? []);
+    $incoming = []; $swapped = []; $sent = [];
+    foreach ($c as $from => $to) {
+      if ($from === $me || !isset($to[$me]) || !isset($d['people'][$from])) continue;
+      if (in_array($from, $mine, true)) {
+        $p = $d['people'][$from];
+        $swapped[] = ['id' => $from, 'name' => $p['name'], 'company' => $p['company'], 'mobile' => $p['mobile'] ?? ''];
+      } else $incoming[] = ['id' => $from, 'name' => $d['people'][$from]['name'], 'company' => $d['people'][$from]['company']];
+    }
+    $swappedIds = array_column($swapped, 'id');
+    foreach ($mine as $to) if (isset($d['people'][$to]) && !in_array($to, $swappedIds, true)) $sent[] = $to;
+    out(['ok' => true, 'incoming' => $incoming, 'swapped' => $swapped, 'sent' => $sent]);
+  }
+
+  // ---------- AI helpers ----------
   case 'icebreaker': {
     if (!ai_on()) fail('AI features are switched off.', 503);
-    $id = (string)($body['id'] ?? ''); $token = (string)($body['token'] ?? ''); $other = (string)($body['other'] ?? '');
     $d = read_store('people', $empty);
-    if (!isset($d['people'][$id]) || !owns($d['people'][$id], $token)) fail('Add yourself to the map first.', 403);
+    $id = me_or_fail($d, $body); $other = (string)($body['other'] ?? '');
     if (!isset($d['people'][$other])) fail('That person is no longer on the map.', 404);
     $key = "$id|$other";
     $cache = read_store('icebreakers', []);
     if (isset($cache[$key])) out(['ok' => true] + $cache[$key]);
     limit('ai', 15, 600);
     $a = public_person($id, $d['people'][$id]); $b = public_person($other, $d['people'][$other]);
-    unset($a['id'], $b['id']);
+    foreach ([&$a, &$b] as &$x) { $x['interests'] = interest_words($x['interests']); unset($x['id'], $x['hasMobile']); } unset($x);
     $prompt = "Two people are at a Maltese business conference called \"" . EVENT_TITLE . "\". Write a warm, specific opening line "
       . "person A could use when walking up to person B, plus one sentence on what they could explore together. Plain English, "
       . "no jargon, under 60 words in total. Reply with only JSON: {\"opener\": string, \"explore\": string}.\n"
       . "Person A: " . json_encode($a, JSON_UNESCAPED_UNICODE) . "\nPerson B: " . json_encode($b, JSON_UNESCAPED_UNICODE);
     $text = claude($prompt, 250);
+    $j = null;
     if (preg_match('/\{.*\}/s', $text, $m)) $j = json_decode($m[0], true);
     $r = ['opener' => clean($j['opener'] ?? $text, 300), 'explore' => clean($j['explore'] ?? '', 300)];
     with_store('icebreakers', function (&$c) use ($key, $r) { $c[$key] = $r; }, []);
@@ -193,20 +269,74 @@ switch ($action) {
     }
     limit('insight', 6, 600);
     $rows = [];
-    foreach ($d['people'] as $p) $rows[] = "- {$p['sector']} | " . ($p['role'] ?: '?') . ' | offers: ' . implode(', ', $p['offer']) . ' | looking for: ' . implode(', ', $p['need']);
+    foreach ($d['people'] as $p) $rows[] = '- ' . ($p['sector'] ?? 'Other') . ' | ' . (($p['role'] ?? '') ?: '?') . (!empty($p['speaker']) ? ' | speaker' : '')
+      . ' | here for: ' . implode('; ', interest_words($p['interests'] ?? []));
     $prompt = "You are helping the host of an SME conference in Malta (\"" . EVENT_TITLE . "\") read the room from a live networking "
-      . "sign-up. Below is one line per attendee (sector | role | offers | looking for). Write a short, upbeat summary the host can "
-      . "read aloud from the stage: first who is in the room in one sentence, then the two or three clusters or gaps you notice, "
-      . "then the single most promising cross-sector collaboration. Under 110 words, plain language, no jargon, no names, no "
-      . "headings or bullet symbols, short paragraphs.\n\n" . mb_substr(implode("\n", $rows), 0, 20000);
+      . "sign-up. Below is one line per attendee (sector | role | why they are attending). Write a short, upbeat summary the host can "
+      . "read aloud from the stage: first who is in the room in one sentence, then the two or three clusters or gaps you notice "
+      . "(for example many people looking for something few are offering), then the single most promising match-up in the room. "
+      . "Under 110 words, plain language, no jargon, no names, no headings or bullet symbols, short paragraphs.\n\n"
+      . mb_substr(implode("\n", $rows), 0, 20000);
     $text = claude($prompt, 400);
     with_store('insight', function (&$x) use ($text, $d) { $x = ['text' => $text, 'at' => time(), 'v' => $d['v']]; }, []);
     out(['ok' => true, 'text' => $text]);
   }
 
+  // ---------- audience questions ----------
+  case 'ask': {
+    limit('ask', 6, 600);
+    $s = (string)($body['session'] ?? '');
+    if (!isset(QA_SESSIONS[$s])) fail('Choose which session your question is for.');
+    $text = clean($body['text'] ?? '', 280);
+    if (mb_strlen($text) < 8) fail('Write your question in a few more words.');
+    $dev = clean($body['device'] ?? '', 64);
+    $q = ['s' => $s, 'text' => $text, 'name' => clean($body['name'] ?? '', 60), 'at' => time(),
+          'votes' => $dev !== '' ? [hash('sha256', $dev)] : [], 'hidden' => false, 'answered' => false];
+    $qid = with_store('questions', function (&$d) use ($q) {
+      if (count($d['items']) >= 1000) return null;
+      $id = bin2hex(random_bytes(5)); $d['items'][$id] = $q; $d['v']++; return $id;
+    }, $emptyQ);
+    if ($qid === null) fail('The question list is full.', 409);
+    out(['ok' => true, 'id' => $qid]);
+  }
+
+  case 'vote': {
+    limit('vote', 60, 600);
+    $qid = (string)($body['qid'] ?? ''); $dev = clean($body['device'] ?? '', 64);
+    if ($dev === '') fail('Bad request.');
+    $h = hash('sha256', $dev);
+    $n = with_store('questions', function (&$d) use ($qid, $h) {
+      if (!isset($d['items'][$qid]) || $d['items'][$qid]['hidden']) return null;
+      $v = &$d['items'][$qid]['votes'];
+      if (in_array($h, $v, true)) $v = array_values(array_diff($v, [$h])); else $v[] = $h;
+      $d['v']++; return count($v);
+    }, $emptyQ);
+    if ($n === null) fail('That question is no longer available.', 404);
+    out(['ok' => true, 'votes' => $n]);
+  }
+
+  case 'questions': {
+    $s = (string)($_GET['session'] ?? '');
+    $dev = clean($_GET['device'] ?? '', 64); $h = $dev !== '' ? hash('sha256', $dev) : '';
+    $d = read_store('questions', $emptyQ);
+    $items = [];
+    foreach ($d['items'] as $id => $q) {
+      if ($q['hidden'] || ($s !== '' && $q['s'] !== $s)) continue;
+      $items[] = ['id' => $id, 's' => $q['s'], 'text' => $q['text'], 'name' => $q['name'], 'votes' => count($q['votes']),
+                  'mine' => $h !== '' && in_array($h, $q['votes'], true), 'answered' => $q['answered'], 'at' => $q['at']];
+    }
+    usort($items, fn($a, $b) => [$a['answered'], -$a['votes'], $a['at']] <=> [$b['answered'], -$b['votes'], $b['at']]);
+    out(['ok' => true, 'v' => $d['v'], 'items' => $items]);
+  }
+
+  // ---------- organiser and host tools (organiser password) ----------
   case 'admin': {
-    limit('admin', 10, 600);
-    if (!hash_equals(ADMIN_KEY_HASH, hash('sha256', (string)($body['key'] ?? '')))) fail('Wrong organiser password.', 403);
+    // Only wrong passwords count towards the lock-out, so the host page can refresh freely.
+    $fails = read_store('ratelimit', []);
+    $ip = $_SERVER['HTTP_CF_CONNECTING_IP'] ?? $_SERVER['REMOTE_ADDR'] ?? '0';
+    $fk = 'adminfail:' . substr(hash('sha256', $ip . ADMIN_KEY_HASH), 0, 16);
+    if (count(array_filter($fails[$fk] ?? [], fn($t) => $t > time() - 600)) >= 10) fail('Too many wrong passwords. Please wait ten minutes.', 429);
+    if (!is_admin($body)) { limit('adminfail', 1000, 600); fail('Wrong organiser password.', 403); }
     $op = $body['op'] ?? '';
     if ($op === 'check') out(['ok' => true, 'ai' => ai_on()]);
     if ($op === 'setkey') {
@@ -218,13 +348,49 @@ switch ($action) {
     }
     if ($op === 'clear') {
       $n = with_store('people', function (&$d) { $n = count($d['people']); $d = ['v' => $d['v'] + 1, 'people' => []]; return $n; }, $empty);
-      foreach (['icebreakers', 'insight'] as $f) @unlink(DATA_DIR . "/$f.json");
+      foreach (['icebreakers', 'insight', 'contacts'] as $f) @unlink(DATA_DIR . "/$f.json");
       out(['ok' => true, 'deleted' => $n]);
     }
     if ($op === 'export') {
+      // Mobile numbers are deliberately left out: attendees only agreed to share them with people they swap with.
       $d = read_store('people', $empty); $rows = [];
-      foreach ($d['people'] as $id => $p) $rows[] = public_person($id, $p);
+      foreach ($d['people'] as $id => $p) {
+        $r = public_person($id, $p); $r['interests'] = interest_words($r['interests']); unset($r['hasMobile']); $rows[] = $r;
+      }
       out(['ok' => true, 'people' => $rows]);
+    }
+    if ($op === 'qall') {
+      $d = read_store('questions', $emptyQ); $items = [];
+      foreach ($d['items'] as $id => $q) $items[] = ['id' => $id, 's' => $q['s'], 'text' => $q['text'], 'name' => $q['name'],
+        'votes' => count($q['votes']), 'hidden' => $q['hidden'], 'answered' => $q['answered'], 'at' => $q['at']];
+      usort($items, fn($a, $b) => [$a['answered'], -$a['votes'], $a['at']] <=> [$b['answered'], -$b['votes'], $b['at']]);
+      out(['ok' => true, 'v' => $d['v'], 'items' => $items, 'ai' => ai_on()]);
+    }
+    if ($op === 'qset') {
+      $qid = (string)($body['qid'] ?? ''); $field = (string)($body['field'] ?? '');
+      if (!in_array($field, ['hidden', 'answered'], true)) fail('Bad request.');
+      $ok = with_store('questions', function (&$d) use ($qid, $field) {
+        if (!isset($d['items'][$qid])) return false;
+        $d['items'][$qid][$field] = !$d['items'][$qid][$field]; $d['v']++; return true;
+      }, $emptyQ);
+      out(['ok' => $ok]);
+    }
+    if ($op === 'qsummary') {
+      if (!ai_on()) fail('AI features are switched off.', 503);
+      $s = (string)($body['session'] ?? '');
+      $d = read_store('questions', $emptyQ); $rows = [];
+      foreach ($d['items'] as $q) if (!$q['hidden'] && !$q['answered'] && $q['s'] === $s) $rows[] = '- (' . count($q['votes']) . ' votes) ' . $q['text'];
+      if (count($rows) < 2) fail('There are not enough open questions for this session yet.');
+      $prompt = "You are helping the moderator of a panel at an SME conference in Malta (\"" . EVENT_TITLE . "\"). The session is: "
+        . (QA_SESSIONS[$s] ?? '') . ". Below are the open audience questions with their votes. Group similar questions into at most "
+        . "four themes. For each theme write one clear, short question the moderator can put to the panel, merging the wording of the "
+        . "audience, and say in brackets how many audience questions it covers. Most popular theme first. Plain language, no preamble, "
+        . "one theme per line.\n\n" . mb_substr(implode("\n", $rows), 0, 15000);
+      out(['ok' => true, 'text' => claude($prompt, 450)]);
+    }
+    if ($op === 'qclear') {
+      $n = with_store('questions', function (&$d) { $n = count($d['items']); $d = ['v' => $d['v'] + 1, 'items' => []]; return $n; }, $emptyQ);
+      out(['ok' => true, 'deleted' => $n]);
     }
     fail('Unknown request.');
   }

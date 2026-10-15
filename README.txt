@@ -2,7 +2,9 @@ SME CONSTELLATION – SETUP ON HOSTINGER (about 10 minutes)
 ========================================================
 
 WHAT'S IN THE FOLDER
-  index.html    Attendee page (this is what the lanyard QR code opens)
+  event.php     >>> EDIT THIS to change the questions, sectors, agenda and Q&A sessions <<<
+  host.html     Host's view of audience questions (organiser password): answered/hide, AI grouping
+  index.html    Attendee page (the lanyard QR opens this): add yourself, matches, map, agenda, ask a question
   screen.html   Big-screen page for the projector (live map, QR code, "Read the room", organiser tools)
   api.php       Saves profiles and talks to the AI
   config.php    Settings: event title and the organiser password (stored as a hash only)
@@ -37,3 +39,8 @@ NOTES
   - Nobody needs an account. Each phone remembers its own entry so people can edit or remove themselves.
   - Needs PHP 8.0 or newer (Hostinger default). If saving fails, set the data/ folder permissions to 755.
   - Clear profiles after testing and after the event (GDPR: the consent text promises deletion).
+
+PRIVACY NOTES
+  - Mobile numbers are never shown on the map and are not in the CSV export.
+    A number is only revealed when both people tap "Swap mobile numbers" for each other.
+  - "Clear all profiles" also deletes all number swaps. "Clear all questions" deletes the Q&A.
