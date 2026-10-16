@@ -1,5 +1,5 @@
 Options -Indexes
-<FilesMatch "^(config|event)\.php$">
+<FilesMatch "^(config|event|polls)\.php$">
   # These only define settings and print nothing, but keep them off the web anyway
   Require all denied
 </FilesMatch>

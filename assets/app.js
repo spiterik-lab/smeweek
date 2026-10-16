@@ -177,7 +177,7 @@ function attendee(){
   const sky=Sky($("sky"));
   const people=()=>{ const l=real.slice(); if(showEx) l.push(...EX); return l; };
   const myProfile=()=> me && real.find(p=>p.id===me.id);
-  const VIEWS=["join","matches","map","agenda","ask"];
+  const VIEWS=[...document.querySelectorAll("nav.tabs button")].map(b=>b.dataset.view);
 
   function render(){
     const l=people();
@@ -211,6 +211,7 @@ function attendee(){
     if(view==="agenda") renderAgenda();
     if(view==="ask") loadQuestions();
     store.set("tab",view);
+    document.dispatchEvent(new CustomEvent("smec:view",{detail:view}));
   }
   for(const b of document.querySelectorAll("nav.tabs button")) b.addEventListener("click",()=>show(b.dataset.view));
   $("emptyJoin").addEventListener("click",()=>show("join"));
@@ -459,7 +460,11 @@ function host(){
   try{ CFG=await api("config"); }
   catch(err){ document.body.prepend(el("p","note warn boot",err.message)); return; }
   SECTOR_ORDER=CFG.sectors.map(s=>s[0]); COLOR=Object.fromEntries(CFG.sectors);
+  // Optional add-ons: anything marked data-feature="polls" disappears when polls are switched off.
+  if(!CFG.polls) for(const e of document.querySelectorAll('[data-feature="polls"]')) e.remove();
+  window.SMEC={cfg:CFG, api, device, store, el, $};
   const page=document.body.dataset.page;
-  if(page==="screen") screen(); else if(page==="host") host(); else attendee();
+  if(page==="screen") screen(); else if(page==="host") host(); else if(page==="attendee") attendee();
+  document.dispatchEvent(new CustomEvent("smec:ready"));
 })();
 })();

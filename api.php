@@ -111,6 +111,14 @@ function me_or_fail(array $d, array $body): string {
   return $id;
 }
 function is_admin(array $body): bool { return hash_equals(ADMIN_KEY_HASH, hash('sha256', (string)($body['key'] ?? ''))); }
+/** Organiser password check. Only wrong passwords count towards the lock-out, so host pages can refresh freely. */
+function require_admin(array $body): void {
+  $fails = read_store('ratelimit', []);
+  $ip = $_SERVER['HTTP_CF_CONNECTING_IP'] ?? $_SERVER['REMOTE_ADDR'] ?? '0';
+  $fk = 'adminfail:' . substr(hash('sha256', $ip . ADMIN_KEY_HASH), 0, 16);
+  if (count(array_filter($fails[$fk] ?? [], fn($t) => $t > time() - 600)) >= 10) fail('Too many wrong passwords. Please wait ten minutes.', 429);
+  if (!is_admin($body)) { limit('adminfail', 1000, 600); fail('Wrong organiser password.', 403); }
+}
 
 function claude(string $prompt, int $maxTokens = 350): string {
   $ch = curl_init('https://api.anthropic.com/v1/messages');
@@ -138,6 +146,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $empty = ['v' => 0, 'people' => []];
 $emptyQ = ['v' => 0, 'items' => []];
 
+// Optional live polls add-on (see ENABLE_POLLS in event.php). polls.php handles its own actions and exits.
+$pollsOn = defined('ENABLE_POLLS') && ENABLE_POLLS && is_file(__DIR__ . '/polls.php');
+if ($pollsOn && in_array($action, ['poll', 'pvote', 'padmin'], true)) require __DIR__ . '/polls.php';
+
 switch ($action) {
 
   // ---------- event content (questions, sectors, agenda) ----------
@@ -147,7 +159,7 @@ switch ($action) {
     $agenda = array_map(fn($a) => ['time' => $a[0], 'mins' => $a[1], 'title' => $a[2], 'who' => $a[3], 'qa' => $a[4]], AGENDA);
     $qa = []; foreach (QA_SESSIONS as $k => $label) $qa[] = ['key' => $k, 'label' => $label];
     out(['ok' => true, 'title' => EVENT_TITLE, 'date' => EVENT_DATE, 'interests' => $interests, 'networking' => NETWORKING_LABEL,
-         'sectors' => SECTORS, 'agenda' => $agenda, 'qa' => $qa, 'consent' => CONSENT_TEXT]);
+         'sectors' => SECTORS, 'agenda' => $agenda, 'qa' => $qa, 'consent' => CONSENT_TEXT, 'polls' => $pollsOn]);
   }
 
   // ---------- networking map ----------
@@ -331,12 +343,7 @@ switch ($action) {
 
   // ---------- organiser and host tools (organiser password) ----------
   case 'admin': {
-    // Only wrong passwords count towards the lock-out, so the host page can refresh freely.
-    $fails = read_store('ratelimit', []);
-    $ip = $_SERVER['HTTP_CF_CONNECTING_IP'] ?? $_SERVER['REMOTE_ADDR'] ?? '0';
-    $fk = 'adminfail:' . substr(hash('sha256', $ip . ADMIN_KEY_HASH), 0, 16);
-    if (count(array_filter($fails[$fk] ?? [], fn($t) => $t > time() - 600)) >= 10) fail('Too many wrong passwords. Please wait ten minutes.', 429);
-    if (!is_admin($body)) { limit('adminfail', 1000, 600); fail('Wrong organiser password.', 403); }
+    require_admin($body);
     $op = $body['op'] ?? '';
     if ($op === 'check') out(['ok' => true, 'ai' => ai_on()]);
     if ($op === 'setkey') {

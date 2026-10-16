@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Live poll · Making AI work for SMEs</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700&display=swap">
+<link rel="stylesheet" href="assets/app.css?v=3">
+</head>
+<body data-page="polls" class="screen polls-page">
+<img class="swash" src="assets/img/swash.webp" alt="" aria-hidden="true">
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <h1>Making <em>AI</em> work for SMEs</h1>
+      <p>Live poll</p>
+    </div>
+    <img class="brand-logos" src="assets/img/brand-logos.png" alt="Malta Employers · SME Week Malta 2026" width="1000" height="125">
+  </header>
+
+  <section class="grid">
+    <div class="panel poll-stage">
+      <div id="pIdle" class="stack"><p class="eyebrow">Live poll</p><h2 class="poll-q">The next poll will appear here.</h2></div>
+      <div id="pLive" hidden class="stack">
+        <p class="eyebrow" id="pState"></p>
+        <h2 class="poll-q" id="pQuestion"></h2>
+        <div class="pbars big" id="pBars" aria-live="polite"></div>
+        <p class="note big" id="pCount"></p>
+      </div>
+    </div>
+    <aside class="side">
+      <div class="panel">
+        <span class="eyebrow">Scan to vote</span>
+        <div class="qr" id="pQr"></div>
+        <span class="joinurl" id="pJoin"></span>
+        <p>Open the “Poll” tab.</p>
+      </div>
+      <button class="btn ghost" id="pFull" type="button">Full screen</button>
+    </aside>
+  </section>
+</div>
+<script src="assets/qrcode.js"></script>
+<script src="assets/app.js?v=3"></script>
+<script src="assets/polls.js?v=1"></script>
+</body>
+</html>

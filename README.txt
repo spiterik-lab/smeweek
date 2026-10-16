@@ -3,7 +3,8 @@ SME CONSTELLATION – SETUP ON HOSTINGER (about 10 minutes)
 
 WHAT'S IN THE FOLDER
   event.php     >>> EDIT THIS to change the questions, sectors, agenda and Q&A sessions <<<
-  host.html     Host's view of audience questions (organiser password): answered/hide, AI grouping
+  host.html     Host view (organiser password): live polls (open/close) and audience questions
+  polls.html    Live poll results for the big screen
   index.html    Attendee page (the lanyard QR opens this): add yourself, matches, map, agenda, ask a question
   screen.html   Big-screen page for the projector (live map, QR code, "Read the room", organiser tools)
   api.php       Saves profiles and talks to the AI
@@ -44,3 +45,9 @@ PRIVACY NOTES
   - Mobile numbers are never shown on the map and are not in the CSV export.
     A number is only revealed when both people tap "Swap mobile numbers" for each other.
   - "Clear all profiles" also deletes all number swaps. "Clear all questions" deletes the Q&A.
+
+LIVE POLLS (optional add-on)
+  - Polls are written in event.php (POLLS). Open and close them from host.html; results show on polls.html.
+  - Switch off: set ENABLE_POLLS = false in event.php (the Poll tab, host controls and results screen disappear).
+  - Remove completely: also delete polls.php, polls.html and assets/polls.js, and the lines marked
+    data-feature="polls" in index.html, host.html and screen.html (and the polls block at the end of app.css).

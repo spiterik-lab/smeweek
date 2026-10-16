@@ -68,3 +68,23 @@ const QA_SESSIONS = [
 
 // Text shown next to the consent tick box.
 const CONSENT_TEXT = "I agree that my name, organisation and answers are shown to other attendees on this map. My mobile number is only shared with people I agree to swap numbers with. Everything is deleted after the event.";
+
+// ============================================================================
+// LIVE POLLS (optional add-on). Set to false to switch polls off everywhere:
+// the Poll tab, the host controls and the results screen all disappear.
+// To remove polls completely, also delete polls.php, polls.html and assets/polls.js.
+// ============================================================================
+const ENABLE_POLLS = true;
+
+// key => [question, [options...], how many options each person may pick]
+// Keep keys stable once voting has started. DRAFT wording: confirm with Anton.
+const POLLS = [
+  'journey' => ['Where is your business on its AI journey today?',
+    ["We haven’t started yet", "We’re exploring and experimenting", 'We use AI for a few everyday tasks', 'AI is part of how we run the business'], 1],
+  'skills' => ['Which skills gap is AI exposing most in your business?',
+    ['Basic digital skills', 'Knowing which AI tools to use', 'Working with data', "Leaders’ understanding of AI", 'Time to learn and experiment', "We don’t see a gap yet"], 2],
+  'support' => ['What would help your business most to adopt AI?',
+    ['Funding and grants', 'Training for our staff', 'Expert advice', 'Clear rules on data and AI', 'Examples from similar businesses', 'Better technology and infrastructure'], 2],
+  'next' => ['After this morning, how likely are you to try AI in a new part of your business in the next three months?',
+    ['Very likely', 'Likely', 'Not sure yet', 'Unlikely'], 1],
+];
