@@ -85,15 +85,35 @@ function clean_phone(mixed $v): string {
   $s = trim(preg_replace('/\s+/', ' ', $s));
   return mb_substr($s, 0, 20);
 }
+function clean_email(mixed $v): string {
+  $s = trim((string)($v ?? ''));
+  if ($s === '') return '';
+  if (!filter_var($s, FILTER_VALIDATE_EMAIL) || mb_strlen($s) > 120) fail('That email address does not look right.');
+  return $s;
+}
+function clean_link(mixed $v): string {
+  $s = trim((string)($v ?? ''));
+  if ($s === '') return '';
+  if (!preg_match('~^https?://~i', $s)) $s = 'https://' . $s;
+  if (!filter_var($s, FILTER_VALIDATE_URL) || mb_strlen($s) > 200) fail('That LinkedIn or website link does not look right.');
+  return $s;
+}
 function pick_interests(mixed $v): array {
   if (!is_array($v)) return [];
   return array_values(array_unique(array_filter($v, fn($x) => is_string($x) && in_array($x, INTEREST_IDS, true))));
 }
-/** What everyone in the room may see. The mobile number is never included. */
+/** What everyone in the room may see. Contact details are never included. */
 function public_person(string $id, array $p): array {
   return ['id' => $id, 'name' => $p['name'], 'company' => $p['company'], 'role' => $p['role'] ?? '', 'sector' => $p['sector'] ?? 'Other',
-          'interests' => $p['interests'] ?? [], 'speaker' => !empty($p['speaker']), 'work' => $p['work'] ?? '', 'hasMobile' => ($p['mobile'] ?? '') !== ''];
+          'interests' => $p['interests'] ?? [], 'speaker' => !empty($p['speaker']), 'work' => $p['work'] ?? ''];
 }
+/** The private "business card" a person shares once they accept (or have accepted) a connection. */
+function card(array $p): array {
+  return array_filter(['mobile' => empty($p['hide_mobile']) ? ($p['mobile'] ?? '') : '', 'email' => $p['email'] ?? '', 'linkedin' => $p['linkedin'] ?? '']);
+}
+/** contacts.json: $c[from][to] = request. Older entries were a bare timestamp. */
+function req_at(mixed $r): int { return is_array($r) ? (int)($r['at'] ?? 0) : (int)$r; }
+function req_msg(mixed $r): string { return is_array($r) ? (string)($r['msg'] ?? '') : ''; }
 /** Interests as words, for the AI prompts and the export. */
 function interest_words(array $ids): array {
   $w = [];
@@ -159,7 +179,9 @@ switch ($action) {
     $agenda = array_map(fn($a) => ['time' => $a[0], 'mins' => $a[1], 'title' => $a[2], 'who' => $a[3], 'qa' => $a[4]], AGENDA);
     $qa = []; foreach (QA_SESSIONS as $k => $label) $qa[] = ['key' => $k, 'label' => $label];
     out(['ok' => true, 'title' => EVENT_TITLE, 'date' => EVENT_DATE, 'interests' => $interests, 'networking' => NETWORKING_LABEL,
-         'sectors' => SECTORS, 'agenda' => $agenda, 'qa' => $qa, 'consent' => CONSENT_TEXT, 'polls' => $pollsOn]);
+         'sectors' => SECTORS, 'agenda' => $agenda, 'qa' => $qa, 'consent' => CONSENT_TEXT, 'reportConsent' => REPORT_CONSENT_TEXT,
+         'retention' => RETENTION_TEXT, 'intro' => ['title' => INTRO_TITLE, 'text' => INTRO_TEXT], 'requestDefault' => REQUEST_DEFAULT,
+         'polls' => $pollsOn]);
   }
 
   // ---------- networking map ----------
@@ -178,6 +200,8 @@ switch ($action) {
     $p = [
       'name' => clean($body['name'] ?? '', 60), 'company' => clean($body['company'] ?? '', 80),
       'mobile' => clean_phone($body['mobile'] ?? ''),
+      'email' => clean_email($body['email'] ?? ''), 'linkedin' => clean_link($body['linkedin'] ?? ''),
+      'hide_mobile' => !empty($body['hide_mobile']), 'report' => !empty($body['report']),
       'role' => clean($body['role'] ?? '', 80), 'work' => clean($body['work'] ?? '', 200),
       'sector' => in_array($body['sector'] ?? '', SECTOR_NAMES, true) ? $body['sector'] : 'Other',
       'interests' => pick_interests($body['interests'] ?? []),
@@ -194,7 +218,7 @@ switch ($action) {
       }
       if (count($d['people']) >= MAX_PEOPLE) return null;
       $newId = bin2hex(random_bytes(6)); $newToken = bin2hex(random_bytes(16));
-      $d['people'][$newId] = $p + ['token_hash' => hash('sha256', $newToken), 'at' => time()];
+      $d['people'][$newId] = $p + ['token_hash' => hash('sha256', $newToken), 'at' => time(), 'created' => time()];
       $d['v']++; return ['id' => $newId, 'token' => $newToken];
     }, $empty);
     if ($res === null) fail('The map is full.', 409);
@@ -207,25 +231,35 @@ switch ($action) {
       if (!isset($d['people'][$id]) || !owns($d['people'][$id], $token)) return false;
       unset($d['people'][$id]); $d['v']++; return true;
     }, $empty);
-    if ($done) with_store('contacts', function (&$c) use ($id) {
+    if ($done) foreach (['contacts', 'declined'] as $f) with_store($f, function (&$c) use ($id) {
       unset($c[$id]); foreach ($c as $k => $to) { unset($c[$k][$id]); if (!$c[$k]) unset($c[$k]); }
     }, []);
     out(['ok' => true, 'removed' => $done]);
   }
 
-  // ---------- swapping mobile numbers (both people must agree) ----------
+  // ---------- connection requests (contact details are swapped only when both agree) ----------
   case 'connect': {
-    limit('connect', 30, 600);
+    limit('connect', 40, 600);
     $d = read_store('people', $empty);
     $me = me_or_fail($d, $body);
     $other = (string)($body['other'] ?? '');
     if (!isset($d['people'][$other]) || $other === $me) fail('That person is no longer on the map.', 404);
-    if (($d['people'][$me]['mobile'] ?? '') === '') fail('Add your mobile number under "Add yourself" first, so you have a number to swap.');
     $undo = !empty($body['undo']);
-    with_store('contacts', function (&$c) use ($me, $other, $undo) {
+    $msg = clean($body['msg'] ?? '', 160);
+    with_store('contacts', function (&$c) use ($me, $other, $undo, $msg) {
       if ($undo) { unset($c[$me][$other]); if (empty($c[$me])) unset($c[$me]); }
-      else $c[$me][$other] = time();
+      elseif (!isset($c[$me][$other])) $c[$me][$other] = ['at' => time(), 'msg' => $msg];
     }, []);
+    // Accepting clears an earlier "not now"; cancelling leaves the other person's choice alone.
+    if (!$undo) with_store('declined', function (&$x) use ($me, $other) { unset($x[$me][$other]); if (empty($x[$me])) unset($x[$me]); }, []);
+    out(['ok' => true]);
+  }
+
+  case 'decline': {
+    $d = read_store('people', $empty);
+    $me = me_or_fail($d, $body);
+    $other = (string)($body['other'] ?? '');
+    with_store('declined', function (&$x) use ($me, $other) { $x[$me][$other] = time(); }, []);
     out(['ok' => true]);
   }
 
@@ -233,18 +267,30 @@ switch ($action) {
     $d = read_store('people', $empty);
     $me = me_or_fail($d, $body);
     $c = read_store('contacts', []);
-    $mine = array_keys($c[$me] ?? []);
+    $dec = read_store('declined', [])[$me] ?? [];
+    $mine = $c[$me] ?? [];
     $incoming = []; $swapped = []; $sent = [];
     foreach ($c as $from => $to) {
       if ($from === $me || !isset($to[$me]) || !isset($d['people'][$from])) continue;
-      if (in_array($from, $mine, true)) {
-        $p = $d['people'][$from];
-        $swapped[] = ['id' => $from, 'name' => $p['name'], 'company' => $p['company'], 'mobile' => $p['mobile'] ?? ''];
-      } else $incoming[] = ['id' => $from, 'name' => $d['people'][$from]['name'], 'company' => $d['people'][$from]['company']];
+      $p = $d['people'][$from];
+      $who = ['id' => $from, 'name' => $p['name'], 'company' => $p['company'], 'role' => $p['role'] ?? ''];
+      if (isset($mine[$from])) $swapped[] = $who + ['card' => (object)card($p), 'at' => max(req_at($to[$me]), req_at($mine[$from]))];
+      elseif (!isset($dec[$from])) $incoming[] = $who + ['msg' => req_msg($to[$me]), 'at' => req_at($to[$me])];
     }
     $swappedIds = array_column($swapped, 'id');
-    foreach ($mine as $to) if (isset($d['people'][$to]) && !in_array($to, $swappedIds, true)) $sent[] = $to;
-    out(['ok' => true, 'incoming' => $incoming, 'swapped' => $swapped, 'sent' => $sent]);
+    foreach ($mine as $to => $r) if (isset($d['people'][$to]) && !in_array($to, $swappedIds, true)) $sent[] = $to;
+    usort($swapped, fn($a, $b) => $b['at'] <=> $a['at']);
+    out(['ok' => true, 'incoming' => $incoming, 'swapped' => $swapped, 'sent' => $sent,
+         'declined' => array_keys($dec), 'card' => (object)card($d['people'][$me])]);
+  }
+
+  // ---------- counts unique devices that opened the app (hashed, for the event report) ----------
+  case 'hello': {
+    $dev = clean($body['device'] ?? '', 64);
+    if ($dev === '') out(['ok' => true]);
+    $h = substr(hash('sha256', $dev . ADMIN_KEY_HASH), 0, 20);
+    with_store('visits', function (&$v) use ($h) { $now = time(); $v[$h] = [($v[$h][0] ?? $now), $now]; }, []);
+    out(['ok' => true]);
   }
 
   // ---------- AI helpers ----------
@@ -355,16 +401,44 @@ switch ($action) {
     }
     if ($op === 'clear') {
       $n = with_store('people', function (&$d) { $n = count($d['people']); $d = ['v' => $d['v'] + 1, 'people' => []]; return $n; }, $empty);
-      foreach (['icebreakers', 'insight', 'contacts'] as $f) @unlink(DATA_DIR . "/$f.json");
+      foreach (['icebreakers', 'insight', 'contacts', 'declined', 'visits'] as $f) @unlink(DATA_DIR . "/$f.json");
       out(['ok' => true, 'deleted' => $n]);
     }
-    if ($op === 'export') {
-      // Mobile numbers are deliberately left out: attendees only agreed to share them with people they swap with.
-      $d = read_store('people', $empty); $rows = [];
-      foreach ($d['people'] as $id => $p) {
-        $r = public_person($id, $p); $r['interests'] = interest_words($r['interests']); unset($r['hasMobile']); $rows[] = $r;
+    if ($op === 'export' || $op === 'report') {
+      // Event report for Malta Employers. Contact details, and who connected with whom, are only included
+      // for people who ticked the optional report box (both people, for a connection).
+      $d = read_store('people', $empty); $c = read_store('contacts', []);
+      $P = $d['people']; $ok = fn($id) => !empty($P[$id]['report']);
+      $sent = []; $recv = []; $pairs = []; $accepted = 0; $pending = 0;
+      foreach ($c as $from => $to) foreach ($to as $t => $r) {
+        if (!isset($P[$from], $P[$t])) continue;
+        $sent[$from] = ($sent[$from] ?? 0) + 1; $recv[$t] = ($recv[$t] ?? 0) + 1;
+        $back = $c[$t][$from] ?? null;
+        if ($back !== null && strcmp($from, $t) > 0) continue; // count each accepted pair once
+        if ($back !== null) $accepted++; else $pending++;
+        if ($ok($from) && $ok($t)) $pairs[] = ['from' => $P[$from]['name'] . ' (' . $P[$from]['company'] . ')', 'to' => $P[$t]['name'] . ' (' . $P[$t]['company'] . ')',
+          'status' => $back !== null ? 'Connected' : 'Request not answered', 'requested' => date('c', req_at($r)),
+          'accepted' => $back !== null ? date('c', max(req_at($r), req_at($back))) : ''];
       }
-      out(['ok' => true, 'people' => $rows]);
+      $links = [];
+      foreach ($c as $from => $to) foreach ($to as $t => $r) if (isset($c[$t][$from], $P[$from], $P[$t])) $links[$from][] = $t;
+      $rows = [];
+      foreach ($P as $id => $p) {
+        $r = public_person($id, $p); $r['interests'] = interest_words($r['interests']); unset($r['id']);
+        $r['joined'] = date('c', (int)($p['created'] ?? $p['at'] ?? 0));
+        $r['report'] = $ok($id);
+        $r['mobile'] = $ok($id) ? ($p['mobile'] ?? '') : ''; $r['email'] = $ok($id) ? ($p['email'] ?? '') : ''; $r['linkedin'] = $ok($id) ? ($p['linkedin'] ?? '') : '';
+        $r['requests_sent'] = $sent[$id] ?? 0; $r['requests_received'] = $recv[$id] ?? 0; $r['connections'] = count($links[$id] ?? []);
+        $r['connected_with'] = $ok($id) ? implode('; ', array_map(fn($o) => $P[$o]['name'] . ' (' . $P[$o]['company'] . ')', array_filter($links[$id] ?? [], $ok))) : '';
+        $rows[] = $r;
+      }
+      $q = read_store('questions', $emptyQ); $qv = 0; foreach ($q['items'] as $it) $qv += count($it['votes']);
+      $pv = 0; $pl = read_store('polls', []); foreach (($pl['votes'] ?? []) as $byDev) $pv += is_array($byDev) ? count($byDev) : 0;
+      $stats = ['App opened (unique phones)' => count(read_store('visits', [])), 'Profiles on the map' => count($P),
+        'Speakers on the map' => count(array_filter($P, fn($p) => !empty($p['speaker']))), 'Agreed to the event report' => count(array_filter($P, fn($p) => !empty($p['report']))),
+        'Connection requests sent' => array_sum($sent), 'Connections made (both agreed)' => $accepted, 'Requests not answered' => $pending,
+        'Questions asked' => count($q['items']), 'Question votes' => $qv, 'Poll votes' => $pv];
+      out(['ok' => true, 'people' => $rows, 'connections' => $pairs, 'stats' => $stats, 'at' => date('c')]);
     }
     if ($op === 'qall') {
       $d = read_store('questions', $emptyQ); $items = [];

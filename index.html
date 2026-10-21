@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700&display=swap">
-<link rel="stylesheet" href="assets/app.css?v=3">
+<link rel="stylesheet" href="assets/app.css?v=4">
 </head>
 <body data-page="attendee">
 <img class="swash" src="assets/img/swash.webp" alt="" aria-hidden="true">
@@ -20,9 +20,10 @@
       <h1>Making <em>AI</em> work for SMEs</h1>
       <p>From policy to practice · Tuesday 24 November 2026 · Trident Park</p>
     </div>
-    <div class="counts" aria-live="polite">
+    <p class="counts-empty" id="cEmpty" hidden>Be the first on the map</p>
+    <div class="counts" id="counts" aria-live="polite">
       <div><b id="cPeople">0</b><span>people</span></div>
-      <div><b id="cLinks">0</b><span>connections</span></div>
+      <div><b id="cLinks">0</b><span>matches</span></div>
       <div><b id="cSectors">0</b><span>sectors</span></div>
     </div>
   </header>
@@ -43,11 +44,20 @@
         <p class="note">Takes about 30 seconds, no sign-up needed. You'll see the people in the room you should meet.</p></div>
       <div class="field"><label class="lbl" for="fName">Name</label><input type="text" id="fName" autocomplete="name" maxlength="60" required></div>
       <div class="field"><label class="lbl" for="fCompany">Organisation</label><input type="text" id="fCompany" autocomplete="organization" maxlength="80" required></div>
-      <div class="field"><label class="lbl" for="fMobile">Mobile number</label><input type="tel" id="fMobile" autocomplete="tel" maxlength="20" placeholder="e.g. 9912 3456" inputmode="tel">
-        <span class="hint">Only shared with people you both agree to swap numbers with.</span></div>
       <div class="field"><label class="lbl" for="fRole">Role <span class="opt">optional</span></label><input type="text" id="fRole" maxlength="80" placeholder="e.g. Managing Director"></div>
       <div class="field"><label class="lbl" for="fSector">Sector <span class="opt">optional</span></label><select id="fSector"></select></div>
-      <div class="field speaker-f"><label class="consent"><input type="checkbox" id="fSpeaker"> I'm a speaker or panellist today</label></div>
+      <div class="field full speaker-f"><label class="consent"><input type="checkbox" id="fSpeaker"> I'm a speaker or panellist today</label></div>
+
+      <fieldset class="field full why card-f">
+        <legend class="lbl-big">Your contact card <span class="opt">optional and private</span></legend>
+        <p class="note">Only shared with people whose request to connect you accept. Leave blank whatever you'd rather keep to yourself.</p>
+        <div class="card-grid">
+          <div class="field"><label class="lbl" for="fMobile">Mobile</label><input type="tel" id="fMobile" autocomplete="tel" maxlength="20" placeholder="e.g. 9912 3456" inputmode="tel"></div>
+          <div class="field"><label class="lbl" for="fEmail">Email</label><input type="email" id="fEmail" autocomplete="email" maxlength="120" placeholder="name@company.com" inputmode="email"></div>
+          <div class="field full"><label class="lbl" for="fLinkedin">LinkedIn or website</label><input type="url" id="fLinkedin" maxlength="200" placeholder="linkedin.com/in/yourname" inputmode="url"></div>
+        </div>
+        <label class="consent"><input type="checkbox" id="fHideMobile"> Hide my mobile number, even from people I connect with</label>
+      </fieldset>
 
       <fieldset class="field full why">
         <legend class="lbl-big">Why are you attending? <span class="opt">tick all that apply</span></legend>
@@ -58,6 +68,7 @@
 
       <div class="field full"><label class="lbl" for="fWork">What I'm working on <span class="opt">optional</span></label><textarea id="fWork" maxlength="200" placeholder="e.g. Automating bookings for our three guesthouses"></textarea></div>
       <div class="field full"><label class="consent"><input type="checkbox" id="fConsent"> <span id="consentText"></span></label></div>
+      <div class="field full"><label class="consent"><input type="checkbox" id="fReport"> <span id="reportText"></span></label></div>
       <div class="field full row"><button class="btn primary" type="submit" id="btnSave">Add me to the map</button><button class="btn ghost" type="button" id="btnRemoveMe" hidden>Remove me</button></div>
       <div class="field full"><span class="note" id="joinMsg" aria-live="polite"></span></div>
     </form>
@@ -69,6 +80,7 @@
       <p class="note" id="matchIntro" aria-live="polite"></p>
       <div class="incoming panel" id="incoming" hidden></div>
       <div class="matches" id="matchList"></div>
+      <div class="panel" id="myContacts" hidden></div>
     </div>
   </section>
 
@@ -79,7 +91,11 @@
         <div class="empty" hidden><strong>The sky is empty for now</strong><span>Each person who joins becomes a star.</span><button class="btn primary" id="emptyJoin" type="button">Add yourself</button></div>
         <div class="legend"></div>
       </div>
+      <p class="note">Tap a star to see who it is.</p>
       <label class="toggle"><input type="checkbox" id="exToggle"> Show example attendees (fictional, for testing)</label>
+      <h3 class="sub">Everyone in the room</h3>
+      <input type="search" id="peopleSearch" placeholder="Search by name, organisation or sector" aria-label="Search people" autocomplete="off">
+      <div class="people" id="peopleList"></div>
     </div>
   </section>
 
@@ -109,9 +125,26 @@
     <div class="stack ask" id="pollBody"></div>
   </section>
 
-  <footer>Profiles are shown only to people at this event and are deleted afterwards. You can remove yours at any time from “Add yourself”.</footer>
+  <footer><span id="footerText">Profiles are shown only to people at this event.</span> You can change or remove yours at any time from “Add yourself”. <button class="linkbtn" id="btnPrivacy" type="button">How your details are used</button></footer>
 </div>
-<script src="assets/app.js?v=3"></script>
+
+<dialog class="sheet" id="introDlg" aria-labelledby="introTitle">
+  <div class="sheet-body">
+    <span class="eyebrow">SME Constellation</span>
+    <h2 class="section-h" id="introTitle"></h2>
+    <div class="stack tight" id="introText"></div>
+    <div class="row"><button class="btn primary" id="introOk" type="button">Got it</button></div>
+  </div>
+</dialog>
+
+<dialog class="sheet" id="personDlg" aria-labelledby="personName">
+  <div class="sheet-body" id="personBody"></div>
+</dialog>
+
+<dialog class="sheet" id="reqDlg" aria-labelledby="reqTitle">
+  <div class="sheet-body" id="reqBody"></div>
+</dialog>
+<script src="assets/app.js?v=4"></script>
 <script src="assets/polls.js?v=1" data-feature="polls"></script>
 </body>
 </html>

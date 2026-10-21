@@ -66,8 +66,28 @@ const QA_SESSIONS = [
   'gen' => 'Keynotes and other speakers',
 ];
 
-// Text shown next to the consent tick box.
-const CONSENT_TEXT = "I agree that my name, organisation and answers are shown to other attendees on this map. My mobile number is only shared with people I agree to swap numbers with. Everything is deleted after the event.";
+// ---------------------------------------------------------------------------
+// PRIVACY WORDING. DRAFT: confirm with Anton and the compliance consultant.
+// ---------------------------------------------------------------------------
+// How long profiles stay. Used in the consent text, the pop-up and the footer.
+const RETENTION_TEXT = "Everything is deleted within 30 days of the event.";
+
+// Required tick box: what other attendees (and the big screen) can see.
+const CONSENT_TEXT = "I agree that my name, organisation, role, sector, reasons for attending and what I'm working on are shown to other attendees in this app and on the big screen at the event. My contact details stay private and are only shared with people whose request I accept.";
+
+// Optional tick box: lets Malta Employers keep the details for its event report.
+const REPORT_CONSENT_TEXT = "Optional: Malta Employers may receive my details, including my contact details, and a record of the connections I make here, to report on the event and keep in touch about similar events.";
+
+// The pop-up everyone sees the first time they open the app. One paragraph per line.
+const INTRO_TITLE = "Before you join";
+const INTRO_TEXT = [
+  "What you add to your profile is public: everyone at the event can see it, and it may appear on the big screen.",
+  "Your mobile, email and LinkedIn are private. They are only shared with someone if they ask to connect and you accept.",
+  "Only share what you're happy to share. You can change or remove your profile at any time.",
+];
+
+// Default message sent with a connection request (the sender can change it).
+const REQUEST_DEFAULT = "I'd like to catch up with you during the conference.";
 
 // ============================================================================
 // LIVE POLLS (optional add-on). Set to false to switch polls off everywhere:

@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700&display=swap">
-<link rel="stylesheet" href="assets/app.css?v=3">
+<link rel="stylesheet" href="assets/app.css?v=4">
 </head>
 <body data-page="screen" class="screen">
 <img class="swash" src="assets/img/swash.webp" alt="" aria-hidden="true">
@@ -19,9 +19,10 @@
       <p>SME Constellation · live networking map</p>
     </div>
     <img class="brand-logos" src="assets/img/brand-logos.png" alt="Malta Employers · SME Week Malta 2026" width="1000" height="125">
-    <div class="counts" aria-live="polite">
+    <p class="counts-empty" id="cEmpty" hidden>Scan the code to be the first on the map</p>
+    <div class="counts" id="counts" aria-live="polite">
       <div><b id="cPeople">0</b><span>people</span></div>
-      <div><b id="cLinks">0</b><span>connections</span></div>
+      <div><b id="cLinks">0</b><span>matches</span></div>
       <div><b id="cSectors">0</b><span>sectors</span></div>
     </div>
   </header>
@@ -62,10 +63,15 @@
           </form>
           <a class="btn ghost" href="host.html" target="_blank" rel="noopener">Open the host view (questions and polls)</a>
           <a class="btn ghost" href="polls.html" target="_blank" rel="noopener" data-feature="polls">Open the poll results screen</a>
-          <button class="btn ghost" id="btnExport" type="button">Download attendee list (CSV)</button>
+          <div class="stack tight" id="reportBox">
+            <span class="lbl">Event report for Malta Employers</span>
+            <div class="stats" id="statsBox"></div>
+            <div class="row"><button class="btn ghost small" id="btnStats" type="button">Refresh numbers</button><button class="btn ghost small" id="btnExport" type="button">People (CSV)</button><button class="btn ghost small" id="btnExportLinks" type="button">Connections (CSV)</button></div>
+            <span class="note">Contact details and who connected with whom are only included for people who ticked the optional report box.</span>
+          </div>
           <button class="btn danger" id="btnClear" type="button">Clear all profiles</button>
           <div class="confirm" id="clearConfirm" hidden>
-            <span class="note warn">This permanently deletes every saved profile and number swap.</span>
+            <span class="note warn">This permanently deletes every saved profile, connection and app-visit count.</span>
             <div class="row"><button class="btn danger" id="btnClearYes" type="button">Delete all</button><button class="btn ghost" id="btnClearNo" type="button">Cancel</button></div>
           </div>
           <button class="btn danger" id="btnQClear" type="button">Clear all questions</button>
@@ -85,6 +91,6 @@
   </footer>
 </div>
 <script src="assets/qrcode.js"></script>
-<script src="assets/app.js?v=3"></script>
+<script src="assets/app.js?v=4"></script>
 </body>
 </html>

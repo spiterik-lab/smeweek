@@ -42,9 +42,16 @@ NOTES
   - Clear profiles after testing and after the event (GDPR: the consent text promises deletion).
 
 PRIVACY NOTES
-  - Mobile numbers are never shown on the map and are not in the CSV export.
-    A number is only revealed when both people tap "Swap mobile numbers" for each other.
-  - "Clear all profiles" also deletes all number swaps. "Clear all questions" deletes the Q&A.
+  - Contact cards (mobile, email, LinkedIn) are never shown on the map. Someone taps "Ask to connect",
+    the other person gets a pop-up and, if they accept, both see each other's card. "Hide my mobile"
+    keeps the number out of the card even after accepting.
+  - First visit shows a pop-up explaining what is public (and may appear on the big screen) and what is private.
+  - Speaker link: https://smeweek.tetra.com.mt/?speaker=1 ticks "I'm a speaker" automatically.
+  - Organiser panel (screen.html): event report numbers plus "People (CSV)" and "Connections (CSV)".
+    Contact details and who-connected-with-whom are only included for people who ticked the optional
+    report box (both people, for a connection). Unique phones that opened the app are counted (hashed).
+  - Privacy wording (consent, report consent, pop-up, retention) is in event.php. DRAFT until confirmed.
+  - "Clear all profiles" also deletes all connections and visit counts. "Clear all questions" deletes the Q&A.
 
 LIVE POLLS (optional add-on)
   - Polls are written in event.php (POLLS). Open and close them from host.html; results show on polls.html.

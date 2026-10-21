@@ -137,7 +137,9 @@ function Sky(sky, opts={}){
     pop.style.left=Math.max(8,Math.min(W-pop.offsetWidth-8,n.x+12))+"px";pop.style.top=Math.max(8,Math.min(H-pop.offsetHeight-8,n.y+12))+"px";}
   cv.addEventListener("pointermove",e=>{if(e.pointerType!=="mouse")return;const r=cv.getBoundingClientRect(),n=at(e.clientX-r.left,e.clientY-r.top);if(n!==hover){hover=n;showPop(n);kick();}});
   cv.addEventListener("pointerleave",()=>{hover=null;showPop(null);});
-  cv.addEventListener("click",e=>{const r=cv.getBoundingClientRect(),n=at(e.clientX-r.left,e.clientY-r.top);hover=n;showPop(n);kick();});
+  cv.addEventListener("click",e=>{const r=cv.getBoundingClientRect(),n=at(e.clientX-r.left,e.clientY-r.top);
+    if(n&&opts.onPick){ hover=null; showPop(null); kick(); opts.onPick(n.p); return; }
+    hover=n;showPop(n);kick();});
   new ResizeObserver(resize).observe(sky);
   return {set,resize};
 }
@@ -167,38 +169,187 @@ function currentItem(){
   return CFG.agenda.find(a=>n.mins>=toMins(a.time) && n.mins<toMins(a.time)+a.mins) || null;
 }
 
+// ---------- counters (real people only; "be the first" when nobody has joined) ----------
+function setCounts(real){
+  $("cPeople").textContent=real.length; $("cLinks").textContent=links(real).length; $("cSectors").textContent=new Set(real.map(p=>p.sector)).size;
+  const none=!real.length; $("counts").hidden=none; $("cEmpty").hidden=!none;
+}
+
+// ---------- contact cards ----------
+function cardLines(c){
+  const out=[];
+  if(c.mobile){ const a=el("a","phone",c.mobile); a.href="tel:"+c.mobile.replace(/\s/g,""); out.push(a); }
+  if(c.email){ const a=el("a","phone",c.email); a.href="mailto:"+c.email; out.push(a); }
+  if(c.linkedin){ const a=el("a","phone",c.linkedin.replace(/^https?:\/\/(www\.)?/,"").replace(/\/$/,"")); a.href=c.linkedin; a.target="_blank"; a.rel="noopener"; out.push(a); }
+  return out;
+}
+function vcard(list){
+  const esc=v=>String(v||"").replace(/\\/g,"\\\\").replace(/\n/g,"\\n").replace(/([,;])/g,"\\$1");
+  return list.map(x=>{ const c=x.card||{}; const L=["BEGIN:VCARD","VERSION:3.0","FN:"+esc(x.name),"N:"+esc(x.name)+";;;;"];
+    if(x.company) L.push("ORG:"+esc(x.company)); if(x.role) L.push("TITLE:"+esc(x.role));
+    if(c.mobile) L.push("TEL;TYPE=CELL:"+c.mobile); if(c.email) L.push("EMAIL:"+c.email); if(c.linkedin) L.push("URL:"+c.linkedin);
+    L.push("NOTE:"+esc("Met at "+CFG.title+", "+CFG.date)); L.push("END:VCARD"); return L.join("\r\n"); }).join("\r\n");
+}
+function download(name, text, type){
+  const a=document.createElement("a"); a.href=URL.createObjectURL(new Blob([text],{type})); a.download=name; document.body.append(a); a.click(); a.remove();
+}
+
 // ==========================================================
 // ATTENDEE PAGE
 // ==========================================================
 function attendee(){
   let real=[], ai=false, me=store.get("me"); // me = {id, token, profile}
-  let showEx=false, exTouched=false, contacts={incoming:[],swapped:[],sent:[]};
+  let showEx=false, exTouched=false, contacts={incoming:[],swapped:[],sent:[],declined:[],card:{}};
   const pick=new Set();
-  const sky=Sky($("sky"));
+  const sky=Sky($("sky"),{onPick:p=>openPerson(p)});
   const people=()=>{ const l=real.slice(); if(showEx) l.push(...EX); return l; };
   const myProfile=()=> me && real.find(p=>p.id===me.id);
+  const mine=()=> myProfile() || (me?.profile ? {...me.profile,id:me.id} : null);
   const VIEWS=[...document.querySelectorAll("nav.tabs button")].map(b=>b.dataset.view);
+  const findPerson=id=> people().find(p=>p.id===id);
+
+  api("hello",{device:device()}).catch(()=>{});
 
   function render(){
-    const l=people();
-    const n=sky.set(l, me?.id);
-    $("cPeople").textContent=l.length; $("cLinks").textContent=n; $("cSectors").textContent=new Set(l.map(p=>p.sector)).size;
+    sky.set(people(), me?.id); setCounts(real);
     if(!$("view-matches").hidden) renderMatches();
+    if(!$("view-map").hidden) renderPeople();
+    if($("personDlg").open && openId) openPerson(findPerson(openId), true);
   }
   const f=feed((p,a)=>{ real=p; ai=a;
     if(me && !real.some(x=>x.id===me.id)){ me=null; store.del("me"); resetForm(); }
     if(!exTouched){ showEx=real.length<6; $("exToggle").checked=showEx; }
     render(); }, 8000);
 
-  // number swaps
+  // ---------- first-visit pop-up: what is public, what is private ----------
+  $("introTitle").textContent=CFG.intro.title;
+  for(const t of CFG.intro.text) $("introText").append(el("p",null,t));
+  $("introText").append(el("p","note",CFG.retention));
+  $("introOk").addEventListener("click",()=>{ $("introDlg").close(); store.set("introSeen",1); });
+  $("btnPrivacy").addEventListener("click",()=>$("introDlg").showModal());
+  $("footerText").textContent="Profiles are shown only to people at this event. "+CFG.retention;
+  for(const d of document.querySelectorAll("dialog.sheet")) d.addEventListener("click",e=>{ if(e.target===d && d.id!=="introDlg") d.close(); });
+  if(!store.get("introSeen")) $("introDlg").showModal();
+
+  // ---------- connection requests ----------
   let cTimer=0;
   async function pollContacts(){
     clearTimeout(cTimer);
     if(me){ try{ contacts=await api("contacts",{id:me.id,token:me.token}); }catch{} }
-    const badge=$("matchBadge"); badge.textContent=contacts.incoming.length||""; badge.hidden=!contacts.incoming.length;
+    else contacts={incoming:[],swapped:[],sent:[],declined:[],card:{}};
+    const n=contacts.incoming.length, badge=$("matchBadge"); badge.textContent=n||""; badge.hidden=!n;
+    document.title=(n?`(${n}) `:"")+document.title.replace(/^\(\d+\) /,"");
+    notify();
     if(!$("view-matches").hidden) renderMatches();
+    if($("personDlg").open && openId) openPerson(findPerson(openId), true);
     cTimer=setTimeout(pollContacts, document.hidden?30000:10000);
   }
+  // Pop up each new request once.
+  function notify(){
+    if($("reqDlg").open || $("introDlg").open) return;
+    const seen=new Set(store.get("notified")||[]);
+    const fresh=contacts.incoming.find(x=>!seen.has(x.id+":"+x.at));
+    if(!fresh) return;
+    seen.add(fresh.id+":"+fresh.at); store.set("notified",[...seen].slice(-200));
+    const body=$("reqBody"); body.replaceChildren();
+    body.append(el("span","eyebrow","Request to connect"), el("h2","section-h",`${fresh.name} would like to connect`));
+    body.append(el("p","meta",[fresh.role,fresh.company].filter(Boolean).join(", ")));
+    if(fresh.msg) body.append(el("blockquote","msg",`“${fresh.msg}”`));
+    body.append(el("p","note",shareNote()));
+    const row=el("div","row");
+    const yes=el("button","btn primary","Accept and share my card"); yes.type="button";
+    yes.onclick=async()=>{ yes.disabled=true; await connect(fresh.id); $("reqDlg").close(); openPerson(findPerson(fresh.id)); };
+    const no=el("button","btn ghost","Not now"); no.type="button"; no.onclick=async()=>{ await decline(fresh.id); $("reqDlg").close(); };
+    const view=el("button","linkbtn","See their profile first"); view.type="button"; view.onclick=()=>{ $("reqDlg").close(); openPerson(findPerson(fresh.id)); };
+    row.append(yes,no); body.append(row,view);
+    try{ navigator.vibrate?.(120); }catch{}
+    $("reqDlg").showModal(); body.tabIndex=-1; body.focus({preventScroll:true});
+  }
+  function shareNote(){
+    const c=contacts.card||{}, have=[c.mobile&&"mobile",c.email&&"email",c.linkedin&&"LinkedIn"].filter(Boolean);
+    return have.length ? `If you accept, they'll see your ${list(have)}, and you'll see theirs.`
+                       : "Your contact card is empty, so they'll only see that you accepted. You can add details under “Add yourself”.";
+  }
+  async function connect(other, undo=false, msg=""){
+    try{ await api("connect",{id:me.id,token:me.token,other,undo,msg}); await pollContacts(); return true; }
+    catch(err){ alertMsg(err.message); return false; }
+  }
+  async function decline(other){ try{ await api("decline",{id:me.id,token:me.token,other}); await pollContacts(); }catch(err){ alertMsg(err.message); } }
+  function alertMsg(t){ const m=$("personDlg").open?$("personMsg"):$("matchIntro"); if(m) m.textContent=t; }
+
+  /** The connect control for one person, in every state. */
+  function connectControl(p){
+    const box=el("div","swap");
+    if(p.example){ box.append(el("span","note","Example attendee, for testing only.")); return box; }
+    if(!me){ const b=el("button","btn ghost small","Add yourself to connect"); b.type="button"; b.onclick=()=>{ $("personDlg").close(); show("join"); }; box.append(b); return box; }
+    const sw=contacts.swapped.find(s=>s.id===p.id);
+    if(sw){
+      box.classList.add("connected"); box.append(el("span","note ok","Connected"));
+      const lines=cardLines(sw.card||{});
+      if(lines.length){ const c=el("div","cardlines"); c.append(...lines); box.append(c);
+        const v=el("button","linkbtn","Save to my phone's contacts"); v.type="button"; v.onclick=()=>download(sw.name.replace(/[^\w ]+/g,"").trim()+".vcf",vcard([sw]),"text/vcard"); box.append(v); }
+      else box.append(el("span","note","They haven't shared contact details, so look out for them in the room."));
+      return box;
+    }
+    const inc=contacts.incoming.find(s=>s.id===p.id) || (contacts.declined.includes(p.id) ? {id:p.id,later:true} : null);
+    if(inc){
+      if(inc.msg) box.append(el("blockquote","msg",`“${inc.msg}”`));
+      box.append(el("span","note",inc.later?"You said “not now” to their request.":"They'd like to connect."));
+      const y=el("button","btn primary small",inc.later?"Accept after all":"Accept and share my card"); y.type="button"; y.onclick=()=>connect(p.id);
+      box.append(y);
+      if(!inc.later){ const n=el("button","btn ghost small","Not now"); n.type="button"; n.onclick=()=>decline(p.id); box.append(n); }
+      return box;
+    }
+    if(contacts.sent.includes(p.id)){
+      box.append(el("span","note","Request sent. Waiting for them to accept. "));
+      const u=el("button","linkbtn","Cancel request"); u.type="button"; u.onclick=()=>connect(p.id,true); box.append(u); return box;
+    }
+    const b=el("button","btn ghost small","Ask to connect"); b.type="button";
+    b.onclick=()=>{ b.remove();
+      const t=el("textarea"); t.maxLength=160; t.value=CFG.requestDefault; t.setAttribute("aria-label","Message with your request");
+      const send=el("button","btn primary small","Send request"); send.type="button";
+      send.onclick=async()=>{ send.disabled=true; if(!await connect(p.id,false,t.value.trim())) send.disabled=false; };
+      const c=el("button","btn ghost small","Cancel"); c.type="button"; c.onclick=()=>box.replaceWith(connectControl(p));
+      box.classList.add("compose"); box.append(el("label","lbl","Add a short message"),t,el("span","note","Your contact card is only shared if they accept."));
+      const r=el("div","row"); r.append(send,c); box.append(r); t.focus(); };
+    box.append(b); return box;
+  }
+
+  // ---------- person details (from the map, the list or a match card) ----------
+  let openId=null;
+  const aiCache=new Map();
+  function openPerson(p, refresh=false){
+    if(!p){ if(refresh) $("personDlg").close(); return; }
+    openId=p.id;
+    const body=$("personBody"); body.replaceChildren();
+    const who=el("div","who"); const dot=el("span","dot"); dot.style.background=COLOR[p.sector]||"#aaa";
+    const h=el("h2","section-h",p.name); h.id="personName"; who.append(dot,h);
+    if(p.speaker) who.append(el("span","flag spk","speaker"));
+    if(p.example) who.append(el("span","flag","example"));
+    if(me && p.id===me.id) who.append(el("span","flag","you"));
+    body.append(who, el("div","meta",[p.role,p.company].filter(Boolean).join(", ")), el("div","meta",p.sector));
+    const m=mine();
+    if(m && p.id!==m.id){ const r=score(m,p); if(r.why.length){ const w=r.why.join("; "); body.append(el("div","why",w.charAt(0).toUpperCase()+w.slice(1)+".")); } }
+    const ws=words(p.interests); if(ws.length){ const tg=el("div","tags"); for(const w of ws) tg.append(el("span","tag",w)); body.append(el("span","lbl","Here for"),tg); }
+    if(p.work) body.append(el("span","lbl","Working on"), el("p",null,p.work));
+    if(!(me && p.id===me.id)){
+      body.append(connectControl(p));
+      if(ai && me && !p.example){
+        const out=el("div","ai"); out.hidden=!aiCache.has(p.id); out.textContent=aiCache.get(p.id)||"";
+        const btn=el("button","btn ghost small","Suggest an opening line"); btn.type="button"; btn.hidden=aiCache.has(p.id);
+        btn.onclick=async()=>{ btn.disabled=true; out.hidden=false; out.textContent="Thinking…";
+          try{ const j=await api("icebreaker",{id:me.id,token:me.token,other:p.id}); const t=`“${j.opener}”${j.explore?"\n\n"+j.explore:""}`; out.textContent=t; aiCache.set(p.id,t); btn.hidden=true; if(!$("view-matches").hidden) renderMatches(); }
+          catch(err){ out.textContent=err.message; } finally{ btn.disabled=false; } };
+        body.append(btn,out);
+      }
+    }
+    const msg=el("p","note warn"); msg.id="personMsg"; msg.setAttribute("aria-live","polite");
+    const close=el("button","btn ghost","Close"); close.type="button"; close.onclick=()=>$("personDlg").close();
+    body.append(msg, close);
+    if(!$("personDlg").open){ $("personDlg").showModal(); body.tabIndex=-1; body.focus({preventScroll:true}); }
+  }
+  $("personDlg").addEventListener("close",()=>{ openId=null; });
+
   pollContacts();
 
   // tabs
@@ -206,7 +357,7 @@ function attendee(){
     if(!VIEWS.includes(view)) view="join";
     for(const b of document.querySelectorAll("nav.tabs button")){ const on=b.dataset.view===view; b.setAttribute("aria-selected",String(on)); if(on) b.scrollIntoView({block:"nearest",inline:"nearest"}); }
     for(const v of VIEWS) $("view-"+v).hidden=v!==view;
-    if(view==="map") sky.resize();
+    if(view==="map"){ sky.resize(); renderPeople(); }
     if(view==="matches") renderMatches();
     if(view==="agenda") renderAgenda();
     if(view==="ask") loadQuestions();
@@ -220,6 +371,7 @@ function attendee(){
   const sel=$("fSector"); sel.append(new Option("Choose a sector (optional)",""));
   for(const s of SECTOR_ORDER) sel.append(new Option(s,s));
   $("consentText").textContent=CFG.consent;
+  $("reportText").textContent=CFG.reportConsent;
   function chip(id,label,box){ const c=el("button","chip",label); c.type="button"; c.dataset.id=id; c.setAttribute("aria-pressed","false");
     c.addEventListener("click",()=>{ if(pick.has(id)) pick.delete(id); else pick.add(id); c.setAttribute("aria-pressed",String(pick.has(id))); }); box.append(c); }
   for(const it of CFG.interests) chip(it.key+":give",it.give,$("chipsGive"));
@@ -228,88 +380,97 @@ function attendee(){
   function msg(t,cls){ const m=$("joinMsg"); m.textContent=t; m.className="note "+(cls||""); }
   function syncChips(){ for(const c of document.querySelectorAll("#joinForm .chip")) c.setAttribute("aria-pressed",String(pick.has(c.dataset.id))); }
   function fillForm(p){ $("fName").value=p.name||""; $("fCompany").value=p.company||""; $("fMobile").value=p.mobile||""; $("fRole").value=p.role||"";
+    $("fEmail").value=p.email||""; $("fLinkedin").value=p.linkedin||""; $("fHideMobile").checked=!!p.hide_mobile; $("fReport").checked=!!p.report;
     sel.value=p.sector&&p.sector!=="Other"?p.sector:(p.sector||""); $("fWork").value=p.work||""; $("fSpeaker").checked=!!p.speaker;
     $("fConsent").checked=true; pick.clear(); for(const i of p.interests||[]) pick.add(i); syncChips();
     $("btnSave").textContent="Update my details"; $("btnRemoveMe").hidden=false; }
-  function resetForm(){ $("joinForm").reset(); pick.clear(); syncChips(); $("btnSave").textContent="Add me to the map"; $("btnRemoveMe").hidden=true; }
-  if(me?.profile) fillForm(me.profile);
+  function resetForm(){ $("joinForm").reset(); pick.clear(); syncChips(); $("btnSave").textContent="Add me to the map"; $("btnRemoveMe").hidden=true; speakerLink(); }
+  // Link for speakers: …/?speaker=1 ticks "I'm a speaker" for them.
+  function speakerLink(){ if(/[?&](speaker|role=speaker)\b/.test(location.search) && !me) $("fSpeaker").checked=true; }
+  if(me?.profile) fillForm(me.profile); else speakerLink();
 
   $("joinForm").addEventListener("submit",async e=>{
     e.preventDefault();
     const p={name:$("fName").value.trim(),company:$("fCompany").value.trim(),mobile:$("fMobile").value.trim(),role:$("fRole").value.trim(),
+             email:$("fEmail").value.trim(),linkedin:$("fLinkedin").value.trim(),hide_mobile:$("fHideMobile").checked,report:$("fReport").checked,
              sector:sel.value||"Other",interests:[...pick],speaker:$("fSpeaker").checked,work:$("fWork").value.trim()};
     if(!p.name||!p.company) return msg("Add your name and organisation.","warn");
     if(!p.interests.length) return msg("Tick at least one reason you're attending.","warn");
-    if(!$("fConsent").checked) return msg("Tick the consent box so others can see your details.","warn");
+    if(!$("fConsent").checked) return msg("Tick the first consent box so others can see your profile.","warn");
     $("btnSave").disabled=true; msg("Saving…");
     try{
       const j=await api("join",{...p,consent:true,id:me?.id||"",token:me?.token||""});
-      me={id:j.id,token:j.token,profile:p}; store.set("me",me); fillForm(p);
-      msg("You're on the map. Opening your matches…","ok"); f.refresh(); pollContacts();
-      setTimeout(()=>show("matches"),900);
+      const first=!me; me={id:j.id,token:j.token,profile:p}; store.set("me",me); fillForm(p);
+      msg(first?"You're on the map. Opening your matches…":"Saved.","ok"); f.refresh(); pollContacts();
+      if(first) setTimeout(()=>show("matches"),900);
     }catch(err){ msg(err.message,"warn"); }
     finally{ $("btnSave").disabled=false; }
   });
   $("btnRemoveMe").addEventListener("click",async()=>{
     if(!me) return;
     try{ await api("remove",{id:me.id,token:me.token}); }catch(err){ return msg(err.message,"warn"); }
-    me=null; store.del("me"); resetForm(); contacts={incoming:[],swapped:[],sent:[]}; msg("You've been removed from the map.","ok"); f.refresh(); pollContacts();
+    me=null; store.del("me"); resetForm(); msg("You've been removed from the map, with your contact card and connections.","ok"); f.refresh(); pollContacts();
   });
 
   // matches
-  const aiCache=new Map();
-  async function connect(other, undo=false){
-    try{ await api("connect",{id:me.id,token:me.token,other,undo}); await pollContacts(); }
-    catch(err){ $("matchIntro").textContent=err.message; }
-  }
-  function swapControl(otherId, otherHasMobile){
-    const box=el("div","swap");
-    const swapped=contacts.swapped.find(s=>s.id===otherId);
-    if(swapped){
-      if(swapped.mobile){ const a=el("a","phone",swapped.mobile); a.href="tel:"+swapped.mobile.replace(/\s/g,""); box.append(el("span","note ok","Numbers swapped: "),a); }
-      else box.append(el("span","note","You've agreed to connect. They haven't added a mobile number."));
-      return box;
-    }
-    const incoming=contacts.incoming.some(s=>s.id===otherId), sent=contacts.sent.includes(otherId);
-    if(sent){ box.append(el("span","note","Waiting for them to agree. ")); const u=el("button","linkbtn","Cancel"); u.type="button"; u.onclick=()=>connect(otherId,true); box.append(u); return box; }
-    const b=el("button","btn ghost small",incoming?"They want to swap numbers. Agree":"Swap mobile numbers"); b.type="button";
-    if(!otherHasMobile && !incoming){ b.disabled=true; b.title="They haven't added a mobile number"; b.textContent="No mobile number added"; }
-    b.onclick=()=>connect(otherId); box.append(b); return box;
-  }
   function renderMatches(){
     const listEl=$("matchList"); listEl.replaceChildren();
     const inc=$("incoming"); inc.replaceChildren(); inc.hidden=true;
-    const mine=myProfile() || (me?.profile ? {...me.profile,id:me.id} : null);
-    if(!mine){ $("matchTitle").textContent="Your people to meet"; $("matchIntro").textContent="Add yourself first. Your matches appear here straight away.";
+    const mc=$("myContacts"); mc.replaceChildren(); mc.hidden=true;
+    const m=mine();
+    if(!m){ $("matchTitle").textContent="Your people to meet"; $("matchIntro").textContent="Add yourself first. Your matches appear here straight away.";
       const b=el("button","btn primary","Add yourself"); b.type="button"; b.onclick=()=>show("join"); listEl.append(b); return; }
-    const ranked=people().filter(p=>p.id!==mine.id).map(p=>({p,...score(mine,p)})).filter(r=>r.s>0).sort((a,b)=>b.s-a.s).slice(0,3);
-    const shown=new Set(ranked.map(r=>r.p.id));
-    const extra=contacts.incoming.filter(x=>!shown.has(x.id)).concat(contacts.swapped.filter(x=>!shown.has(x.id)));
-    if(extra.length){ inc.hidden=false; inc.append(el("h3","sub","Swap requests and contacts"));
-      for(const x of extra){ const row=el("div","inc-row"); row.append(el("span",null,`${x.name}, ${x.company}`), swapControl(x.id, true)); inc.append(row); } }
-    $("matchTitle").textContent=`${mine.name}, your ${ranked.length===1?"best match":"people to meet"}`;
-    $("matchIntro").textContent=ranked.length?"Matched on what you're looking for and what they offer, and the other way round. Swap numbers only if you both agree.":"No strong matches yet. Check back as more people join.";
+    if(contacts.incoming.length){ inc.hidden=false; inc.append(el("h3","sub",`Requests to connect (${contacts.incoming.length})`));
+      for(const x of contacts.incoming){ const row=el("div","inc-row"); const nm=el("button","linkbtn name",`${x.name}, ${x.company}`); nm.type="button";
+        nm.onclick=()=>openPerson(findPerson(x.id)); const p=findPerson(x.id)||{...x,interests:[],sector:"Other"}; row.append(nm, connectControl(p)); inc.append(row); } }
+    const ranked=people().filter(p=>p.id!==m.id).map(p=>({p,...score(m,p)})).filter(r=>r.s>0).sort((a,b)=>b.s-a.s).slice(0,3);
+    $("matchTitle").textContent=`${m.name}, your ${ranked.length===1?"best match":"people to meet"}`;
+    $("matchIntro").textContent=ranked.length?"Matched on what you're looking for and what they offer, and the other way round. Tap a name for more, or ask to connect.":"No strong matches yet. Check back as more people join, or browse everyone under “The map”.";
     for(const r of ranked){
       const card=el("article","match");
       const who=el("div","who"); const dot=el("span","dot"); dot.style.background=COLOR[r.p.sector]||"#aaa";
-      who.append(dot,el("h3",null,r.p.name));
+      const nm=el("button","linkbtn name h",r.p.name); nm.type="button"; nm.onclick=()=>openPerson(r.p);
+      who.append(dot,nm);
       if(r.p.speaker) who.append(el("span","flag spk","speaker"));
       if(r.p.example) who.append(el("span","flag","example"));
       who.append(el("span","score",`${Math.min(99,Math.round(50+r.s*7))}% fit`));
       const meta=el("div","meta",[r.p.role,r.p.company].filter(Boolean).join(", ")+" · "+r.p.sector);
       const w=r.why.join("; "); const why=el("div","why",w.charAt(0).toUpperCase()+w.slice(1)+".");
-      const out=el("div","ai"); out.hidden=true;
-      const btn=el("button","btn ghost small","Suggest an opening line"); btn.type="button"; btn.hidden=!ai || r.p.example;
-      if(aiCache.has(r.p.id)){ out.hidden=false; out.textContent=aiCache.get(r.p.id); btn.hidden=true; }
-      btn.addEventListener("click",async()=>{ btn.disabled=true; out.hidden=false; out.textContent="Thinking…";
-        try{ const j=await api("icebreaker",{id:me.id,token:me.token,other:r.p.id}); const t=`“${j.opener}”${j.explore?"\n\n"+j.explore:""}`; out.textContent=t; aiCache.set(r.p.id,t); btn.hidden=true; }
-        catch(err){ out.textContent=err.message; } finally{ btn.disabled=false; } });
       card.append(who,meta,why);
-      if(!r.p.example) card.append(swapControl(r.p.id, r.p.hasMobile));
-      card.append(btn,out); listEl.append(card);
+      if(aiCache.has(r.p.id)) card.append(el("div","ai",aiCache.get(r.p.id)));
+      card.append(connectControl(r.p));
+      const more=el("button","linkbtn","See profile"+(ai&&!r.p.example?" and opening line":"")); more.type="button"; more.onclick=()=>openPerson(r.p); card.append(more);
+      listEl.append(card);
+    }
+    if(contacts.swapped.length){ mc.hidden=false;
+      mc.append(el("h3","sub",`My contacts (${contacts.swapped.length})`));
+      for(const x of contacts.swapped){ const row=el("div","inc-row"); const nm=el("button","linkbtn name",`${x.name}, ${x.company}`); nm.type="button";
+        nm.onclick=()=>openPerson(findPerson(x.id)); const c=el("div","cardlines"); const ls=cardLines(x.card||{}); if(ls.length) c.append(...ls); else c.append(el("span","note","No details shared"));
+        row.append(nm,c); mc.append(row); }
+      const all=contacts.swapped.filter(x=>Object.keys(x.card||{}).length);
+      if(all.length){ const b=el("button","btn ghost small","Save all to my phone's contacts"); b.type="button";
+        b.onclick=()=>download("sme-week-contacts.vcf",vcard(all),"text/vcard"); mc.append(b); }
     }
   }
   $("exToggle").addEventListener("change",e=>{ showEx=e.target.checked; exTouched=true; render(); });
+
+  // everyone in the room (under the map)
+  function renderPeople(){
+    const box=$("peopleList"); box.replaceChildren();
+    const q=$("peopleSearch").value.trim().toLowerCase();
+    const l=people().filter(p=>!q || [p.name,p.company,p.role,p.sector].join(" ").toLowerCase().includes(q))
+      .sort((a,b)=>(b.speaker-a.speaker)||a.name.localeCompare(b.name));
+    if(!l.length){ box.append(el("p","note",q?"Nobody matches that search.":"Nobody has joined yet.")); return; }
+    for(const p of l.slice(0,300)){
+      const b=el("button","person"); b.type="button"; const dot=el("span","dot"); dot.style.background=COLOR[p.sector]||"#aaa";
+      const t=el("span","pt"); t.append(el("b",null,p.name+(me&&p.id===me.id?" (you)":"")),el("span","meta",[p.role,p.company].filter(Boolean).join(", ")));
+      b.append(dot,t);
+      if(p.speaker) b.append(el("span","flag spk","speaker")); else if(p.example) b.append(el("span","flag","example"));
+      else if(contacts.swapped.some(s=>s.id===p.id)) b.append(el("span","flag ok","connected"));
+      b.onclick=()=>openPerson(p); box.append(b);
+    }
+  }
+  $("peopleSearch").addEventListener("input",renderPeople);
 
   // agenda
   function renderAgenda(){
@@ -376,8 +537,7 @@ function screen(){
 
   function render(){
     const l=real.slice(); if(showEx) l.push(...EX);
-    const n=sky.set(l,null);
-    $("cPeople").textContent=l.length; $("cLinks").textContent=n; $("cSectors").textContent=new Set(l.map(p=>p.sector)).size;
+    sky.set(l,null); setCounts(real);
     $("btnInsight").hidden=!ai; $("aiOff").hidden=ai;
   }
   const f=feed((p,a)=>{ real=p; ai=a; if(exChoice===null){ showEx=real.length<6; $("exToggle").checked=showEx; } render(); }, 4000);
@@ -392,7 +552,7 @@ function screen(){
   // organiser tools
   let key="";
   $("adminForm").addEventListener("submit",async e=>{ e.preventDefault(); const k=$("adminKey").value;
-    try{ const j=await api("admin",{key:k,op:"check"}); key=k; $("adminLogin").hidden=true; $("adminTools").hidden=false; $("adminMsg").textContent="";
+    try{ const j=await api("admin",{key:k,op:"check"}); key=k; $("adminLogin").hidden=true; $("adminTools").hidden=false; $("adminMsg").textContent=""; report().catch(()=>{});
       $("keyState").textContent=j.ai?"AI is on. Paste a new key to replace it, or save an empty box to switch AI off.":"AI is off. Paste your key and save to switch it on."; }
     catch(err){ $("adminMsg").textContent=err.message; } });
   $("keyForm").addEventListener("submit",async e=>{ e.preventDefault();
@@ -406,11 +566,19 @@ function screen(){
   }
   confirmFlow("btnClear","clearConfirm","btnClearYes","btnClearNo","clear","profile");
   confirmFlow("btnQClear","qClearConfirm","btnQClearYes","btnQClearNo","qclear","question");
-  $("btnExport").addEventListener("click",async()=>{ try{ const j=await api("admin",{key,op:"export"});
-    const rows=[["Name","Organisation","Role","Sector","Speaker","Why attending","Working on"],...j.people.map(p=>[p.name,p.company,p.role,p.sector,p.speaker?"Yes":"",p.interests.join("; "),p.work])];
-    const csv=rows.map(r=>r.map(c=>`"${String(c??"").replace(/"/g,'""')}"`).join(",")).join("\r\n");
-    const a=document.createElement("a"); a.href=URL.createObjectURL(new Blob(["﻿"+csv],{type:"text/csv"})); a.download="sme-constellation.csv"; a.click(); }
-    catch(err){ $("adminMsg").textContent=err.message; } });
+  const csv=rows=>"\ufeff"+rows.map(r=>r.map(c=>`"${String(c??"").replace(/"/g,'""')}"`).join(",")).join("\r\n");
+  const stamp=()=>new Date().toISOString().slice(0,10);
+  async function report(){ const j=await api("admin",{key,op:"report"}); const box=$("statsBox"); box.replaceChildren();
+    for(const [k,v] of Object.entries(j.stats)){ const r=el("div","stat"); r.append(el("span",null,k),el("b",null,String(v))); box.append(r); } return j; }
+  $("btnStats").addEventListener("click",()=>report().catch(err=>$("adminMsg").textContent=err.message));
+  $("btnExport").addEventListener("click",async()=>{ try{ const j=await report();
+    const rows=[["Name","Organisation","Role","Sector","Speaker","Why attending","Working on","Joined","Agreed to event report","Mobile","Email","LinkedIn or website","Requests sent","Requests received","Connections made","Connected with"],
+      ...j.people.map(p=>[p.name,p.company,p.role,p.sector,p.speaker?"Yes":"",p.interests.join("; "),p.work,p.joined,p.report?"Yes":"No",p.mobile,p.email,p.linkedin,p.requests_sent,p.requests_received,p.connections,p.connected_with]),
+      [],["Summary"],...Object.entries(j.stats)];
+    download(`sme-constellation-people-${stamp()}.csv`,csv(rows),"text/csv"); }catch(err){ $("adminMsg").textContent=err.message; } });
+  $("btnExportLinks").addEventListener("click",async()=>{ try{ const j=await report();
+    const rows=[["From","To","Status","Requested","Accepted"],...j.connections.map(c=>[c.from,c.to,c.status,c.requested,c.accepted])];
+    download(`sme-constellation-connections-${stamp()}.csv`,csv(rows),"text/csv"); }catch(err){ $("adminMsg").textContent=err.message; } });
   $("btnFull").addEventListener("click",()=>{ document.documentElement.requestFullscreen?.().catch(()=>{}); });
 }
 
