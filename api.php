@@ -180,7 +180,8 @@ switch ($action) {
     $qa = []; foreach (QA_SESSIONS as $k => $label) $qa[] = ['key' => $k, 'label' => $label];
     out(['ok' => true, 'title' => EVENT_TITLE, 'date' => EVENT_DATE, 'interests' => $interests, 'networking' => NETWORKING_LABEL,
          'sectors' => SECTORS, 'agenda' => $agenda, 'qa' => $qa, 'consent' => CONSENT_TEXT, 'reportConsent' => REPORT_CONSENT_TEXT,
-         'retention' => RETENTION_TEXT, 'intro' => ['title' => INTRO_TITLE, 'text' => INTRO_TEXT], 'requestDefault' => REQUEST_DEFAULT,
+         'retention' => RETENTION_TEXT, 'marketingConsent' => MARKETING_CONSENT_TEXT, 'consentFootnote' => CONSENT_FOOTNOTE,
+         'privacyEmail' => PRIVACY_EMAIL, 'controller' => CONTROLLER, 'noticeVersion' => NOTICE_VERSION, 'intro' => ['title' => INTRO_TITLE, 'text' => INTRO_TEXT], 'requestDefault' => REQUEST_DEFAULT,
          'polls' => $pollsOn]);
   }
 
@@ -201,7 +202,9 @@ switch ($action) {
       'name' => clean($body['name'] ?? '', 60), 'company' => clean($body['company'] ?? '', 80),
       'mobile' => clean_phone($body['mobile'] ?? ''),
       'email' => clean_email($body['email'] ?? ''), 'linkedin' => clean_link($body['linkedin'] ?? ''),
-      'hide_mobile' => !empty($body['hide_mobile']), 'report' => !empty($body['report']),
+      'hide_mobile' => !empty($body['hide_mobile']), 'report' => !empty($body['report']), 'marketing' => !empty($body['marketing']),
+      // Record of consent (GDPR Art. 7(1)): when it was given and which version of the notice was shown.
+      'consent_at' => time(), 'consent_v' => NOTICE_VERSION,
       'role' => clean($body['role'] ?? '', 80), 'work' => clean($body['work'] ?? '', 200),
       'sector' => in_array($body['sector'] ?? '', SECTOR_NAMES, true) ? $body['sector'] : 'Other',
       'interests' => pick_interests($body['interests'] ?? []),
@@ -284,11 +287,11 @@ switch ($action) {
          'declined' => array_keys($dec), 'card' => (object)card($d['people'][$me])]);
   }
 
-  // ---------- counts unique devices that opened the app (hashed, for the event report) ----------
+  // ---------- counts how many phones opened the app, for the event report ----------
+  // Uses a one-way hash of the network address and browser, so nothing is read from or stored on the phone for this.
   case 'hello': {
-    $dev = clean($body['device'] ?? '', 64);
-    if ($dev === '') out(['ok' => true]);
-    $h = substr(hash('sha256', $dev . ADMIN_KEY_HASH), 0, 20);
+    $ip = $_SERVER['HTTP_CF_CONNECTING_IP'] ?? $_SERVER['REMOTE_ADDR'] ?? '0';
+    $h = substr(hash('sha256', $ip . '|' . ($_SERVER['HTTP_USER_AGENT'] ?? '') . '|' . ADMIN_KEY_HASH), 0, 20);
     with_store('visits', function (&$v) use ($h) { $now = time(); $v[$h] = [($v[$h][0] ?? $now), $now]; }, []);
     out(['ok' => true]);
   }
@@ -427,15 +430,20 @@ switch ($action) {
         $r = public_person($id, $p); $r['interests'] = interest_words($r['interests']); unset($r['id']);
         $r['joined'] = date('c', (int)($p['created'] ?? $p['at'] ?? 0));
         $r['report'] = $ok($id);
-        $r['mobile'] = $ok($id) ? ($p['mobile'] ?? '') : ''; $r['email'] = $ok($id) ? ($p['email'] ?? '') : ''; $r['linkedin'] = $ok($id) ? ($p['linkedin'] ?? '') : '';
+        $r['marketing'] = !empty($p['marketing']); $r['consent_at'] = isset($p['consent_at']) ? date('c', (int)$p['consent_at']) : ''; $r['consent_v'] = $p['consent_v'] ?? '';
+        $r['mobile'] = $ok($id) && empty($p['hide_mobile']) ? ($p['mobile'] ?? '') : ''; $r['email'] = ($ok($id) || !empty($p['marketing'])) ? ($p['email'] ?? '') : ''; $r['linkedin'] = $ok($id) ? ($p['linkedin'] ?? '') : '';
         $r['requests_sent'] = $sent[$id] ?? 0; $r['requests_received'] = $recv[$id] ?? 0; $r['connections'] = count($links[$id] ?? []);
         $r['connected_with'] = $ok($id) ? implode('; ', array_map(fn($o) => $P[$o]['name'] . ' (' . $P[$o]['company'] . ')', array_filter($links[$id] ?? [], $ok))) : '';
-        $rows[] = $r;
+        // Only people who agreed are listed by name. Marketing-only consent gives name, organisation and email.
+        if (!$ok($id) && !empty($p['marketing'])) $r = ['name' => $r['name'], 'company' => $r['company'], 'email' => $r['email'], 'marketing' => true,
+          'report' => false, 'consent_at' => $r['consent_at'], 'consent_v' => $r['consent_v'], 'interests' => [], 'speaker' => false];
+        if ($ok($id) || !empty($p['marketing'])) $rows[] = $r;
       }
       $q = read_store('questions', $emptyQ); $qv = 0; foreach ($q['items'] as $it) $qv += count($it['votes']);
       $pv = 0; $pl = read_store('polls', []); foreach (($pl['votes'] ?? []) as $byDev) $pv += is_array($byDev) ? count($byDev) : 0;
       $stats = ['App opened (unique phones)' => count(read_store('visits', [])), 'Profiles on the map' => count($P),
         'Speakers on the map' => count(array_filter($P, fn($p) => !empty($p['speaker']))), 'Agreed to the event report' => count(array_filter($P, fn($p) => !empty($p['report']))),
+        'Agreed to future emails' => count(array_filter($P, fn($p) => !empty($p['marketing']))),
         'Connection requests sent' => array_sum($sent), 'Connections made (both agreed)' => $accepted, 'Requests not answered' => $pending,
         'Questions asked' => count($q['items']), 'Question votes' => $qv, 'Poll votes' => $pv];
       out(['ok' => true, 'people' => $rows, 'connections' => $pairs, 'stats' => $stats, 'at' => date('c')]);

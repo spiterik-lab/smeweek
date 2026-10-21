@@ -50,7 +50,9 @@ PRIVACY NOTES
   - Organiser panel (screen.html): event report numbers plus "People (CSV)" and "Connections (CSV)".
     Contact details and who-connected-with-whom are only included for people who ticked the optional
     report box (both people, for a connection). Unique phones that opened the app are counted (hashed).
-  - Privacy wording (consent, report consent, pop-up, retention) is in event.php. DRAFT until confirmed.
+  - Privacy: full notice in privacy.html; consent wording, pop-up and retention in event.php (keep both in step,
+    raise NOTICE_VERSION when the wording changes). Each profile records when consent was given and the notice version.
+    AI output is labelled in the app (EU AI Act Art. 50). DRAFT until Malta Employers and the compliance consultant confirm.
   - "Clear all profiles" also deletes all connections and visit counts. "Clear all questions" deletes the Q&A.
 
 LIVE POLLS (optional add-on)

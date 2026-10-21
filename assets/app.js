@@ -33,6 +33,8 @@ const EX_ROWS = [
 const EX = EX_ROWS.map((r,i)=>({id:"ex"+i,name:r[0],company:r[1],role:r[2],sector:r[3],interests:r[4],speaker:!!r[5],work:"",example:true}));
 
 const $ = id => document.getElementById(id);
+// EU AI Act Art. 50: people should be able to tell that text was written by AI.
+const AI_LABEL = "Suggested by AI (Claude). Use it as a starting point.";
 const el = (tag, cls, text) => { const e=document.createElement(tag); if(cls) e.className=cls; if(text!=null) e.textContent=text; return e; };
 const store = {
   get(k){ try{ return JSON.parse(localStorage.getItem("smec-"+k)); }catch{ return null; } },
@@ -338,7 +340,7 @@ function attendee(){
         const out=el("div","ai"); out.hidden=!aiCache.has(p.id); out.textContent=aiCache.get(p.id)||"";
         const btn=el("button","btn ghost small","Suggest an opening line"); btn.type="button"; btn.hidden=aiCache.has(p.id);
         btn.onclick=async()=>{ btn.disabled=true; out.hidden=false; out.textContent="Thinking…";
-          try{ const j=await api("icebreaker",{id:me.id,token:me.token,other:p.id}); const t=`“${j.opener}”${j.explore?"\n\n"+j.explore:""}`; out.textContent=t; aiCache.set(p.id,t); btn.hidden=true; if(!$("view-matches").hidden) renderMatches(); }
+          try{ const j=await api("icebreaker",{id:me.id,token:me.token,other:p.id}); const t=`“${j.opener}”${j.explore?"\n\n"+j.explore:""}\n\n${AI_LABEL}`; out.textContent=t; aiCache.set(p.id,t); btn.hidden=true; if(!$("view-matches").hidden) renderMatches(); }
           catch(err){ out.textContent=err.message; } finally{ btn.disabled=false; } };
         body.append(btn,out);
       }
@@ -372,6 +374,8 @@ function attendee(){
   for(const s of SECTOR_ORDER) sel.append(new Option(s,s));
   $("consentText").textContent=CFG.consent;
   $("reportText").textContent=CFG.reportConsent;
+  $("marketingText").textContent=CFG.marketingConsent;
+  $("consentFoot").textContent=CFG.consentFootnote+" ";
   function chip(id,label,box){ const c=el("button","chip",label); c.type="button"; c.dataset.id=id; c.setAttribute("aria-pressed","false");
     c.addEventListener("click",()=>{ if(pick.has(id)) pick.delete(id); else pick.add(id); c.setAttribute("aria-pressed",String(pick.has(id))); }); box.append(c); }
   for(const it of CFG.interests) chip(it.key+":give",it.give,$("chipsGive"));
@@ -380,7 +384,7 @@ function attendee(){
   function msg(t,cls){ const m=$("joinMsg"); m.textContent=t; m.className="note "+(cls||""); }
   function syncChips(){ for(const c of document.querySelectorAll("#joinForm .chip")) c.setAttribute("aria-pressed",String(pick.has(c.dataset.id))); }
   function fillForm(p){ $("fName").value=p.name||""; $("fCompany").value=p.company||""; $("fMobile").value=p.mobile||""; $("fRole").value=p.role||"";
-    $("fEmail").value=p.email||""; $("fLinkedin").value=p.linkedin||""; $("fHideMobile").checked=!!p.hide_mobile; $("fReport").checked=!!p.report;
+    $("fEmail").value=p.email||""; $("fLinkedin").value=p.linkedin||""; $("fHideMobile").checked=!!p.hide_mobile; $("fReport").checked=!!p.report; $("fMarketing").checked=!!p.marketing;
     sel.value=p.sector&&p.sector!=="Other"?p.sector:(p.sector||""); $("fWork").value=p.work||""; $("fSpeaker").checked=!!p.speaker;
     $("fConsent").checked=true; pick.clear(); for(const i of p.interests||[]) pick.add(i); syncChips();
     $("btnSave").textContent="Update my details"; $("btnRemoveMe").hidden=false; }
@@ -392,10 +396,11 @@ function attendee(){
   $("joinForm").addEventListener("submit",async e=>{
     e.preventDefault();
     const p={name:$("fName").value.trim(),company:$("fCompany").value.trim(),mobile:$("fMobile").value.trim(),role:$("fRole").value.trim(),
-             email:$("fEmail").value.trim(),linkedin:$("fLinkedin").value.trim(),hide_mobile:$("fHideMobile").checked,report:$("fReport").checked,
+             email:$("fEmail").value.trim(),linkedin:$("fLinkedin").value.trim(),hide_mobile:$("fHideMobile").checked,report:$("fReport").checked,marketing:$("fMarketing").checked,
              sector:sel.value||"Other",interests:[...pick],speaker:$("fSpeaker").checked,work:$("fWork").value.trim()};
     if(!p.name||!p.company) return msg("Add your name and organisation.","warn");
     if(!p.interests.length) return msg("Tick at least one reason you're attending.","warn");
+    if(p.marketing && !p.email) return msg("Add your email so Malta Employers can contact you, or untick the email box.","warn");
     if(!$("fConsent").checked) return msg("Tick the first consent box so others can see your profile.","warn");
     $("btnSave").disabled=true; msg("Saving…");
     try{
@@ -545,7 +550,7 @@ function screen(){
 
   $("btnInsight").addEventListener("click",async()=>{
     const out=$("insight"); $("btnInsight").disabled=true; out.textContent="Thinking…";
-    try{ const j=await api("insight",{}); out.textContent=j.text; }catch(err){ out.textContent=err.message; }
+    try{ const j=await api("insight",{}); out.textContent=j.text+"\n\nSummary written by AI (Claude) from anonymous profile data."; }catch(err){ out.textContent=err.message; }
     finally{ $("btnInsight").disabled=false; }
   });
 
@@ -572,8 +577,9 @@ function screen(){
     for(const [k,v] of Object.entries(j.stats)){ const r=el("div","stat"); r.append(el("span",null,k),el("b",null,String(v))); box.append(r); } return j; }
   $("btnStats").addEventListener("click",()=>report().catch(err=>$("adminMsg").textContent=err.message));
   $("btnExport").addEventListener("click",async()=>{ try{ const j=await report();
-    const rows=[["Name","Organisation","Role","Sector","Speaker","Why attending","Working on","Joined","Agreed to event report","Mobile","Email","LinkedIn or website","Requests sent","Requests received","Connections made","Connected with"],
-      ...j.people.map(p=>[p.name,p.company,p.role,p.sector,p.speaker?"Yes":"",p.interests.join("; "),p.work,p.joined,p.report?"Yes":"No",p.mobile,p.email,p.linkedin,p.requests_sent,p.requests_received,p.connections,p.connected_with]),
+    const rows=[["Only people who agreed to the event report or to future emails are listed. Everyone else is counted in the summary only."],[],
+      ["Name","Organisation","Role","Sector","Speaker","Why attending","Working on","Joined","Agreed to event report","Agreed to future emails","Consent given","Privacy notice version","Mobile","Email","LinkedIn or website","Requests sent","Requests received","Connections made","Connected with"],
+      ...j.people.map(p=>[p.name,p.company,p.role,p.sector,p.speaker?"Yes":"",(p.interests||[]).join("; "),p.work,p.joined,p.report?"Yes":"No",p.marketing?"Yes":"No",p.consent_at,p.consent_v,p.mobile,p.email,p.linkedin,p.requests_sent,p.requests_received,p.connections,p.connected_with]),
       [],["Summary"],...Object.entries(j.stats)];
     download(`sme-constellation-people-${stamp()}.csv`,csv(rows),"text/csv"); }catch(err){ $("adminMsg").textContent=err.message; } });
   $("btnExportLinks").addEventListener("click",async()=>{ try{ const j=await report();
@@ -617,7 +623,7 @@ function host(){
   }
   async function set(qid,field){ try{ await api("admin",{key,op:"qset",qid,field}); load(); }catch(err){ $("hostSummary").textContent=err.message; } }
   $("btnGroup").addEventListener("click",async()=>{ const o=$("hostSummary"); o.textContent="Grouping the questions…"; $("btnGroup").disabled=true;
-    try{ const j=await api("admin",{key,op:"qsummary",session}); o.textContent=j.text; }catch(err){ o.textContent=err.message; } finally{ $("btnGroup").disabled=false; } });
+    try{ const j=await api("admin",{key,op:"qsummary",session}); o.textContent=j.text+"\n\nGrouped by AI (Claude). Check against the original questions before reading out."; }catch(err){ o.textContent=err.message; } finally{ $("btnGroup").disabled=false; } });
   $("hostForm").addEventListener("submit",e=>{ e.preventDefault(); key=$("hostKey").value; store.set("hostKey",key); $("hostMsg").textContent=""; load(); });
   $("btnLock").addEventListener("click",()=>{ key=""; store.del("hostKey"); clearTimeout(timer); $("hostForm").hidden=false; $("hostMain").hidden=true; });
   if(key) load(); else { $("hostForm").hidden=false; }

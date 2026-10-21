@@ -67,22 +67,35 @@ const QA_SESSIONS = [
 ];
 
 // ---------------------------------------------------------------------------
-// PRIVACY WORDING. DRAFT: confirm with Anton and the compliance consultant.
+// PRIVACY AND CONSENT (GDPR and EU AI Act transparency)
+// DRAFT: confirm with Malta Employers and the compliance consultant before speakers sign up.
+// The full notice is privacy.html. If you change who does what, or how long data is kept,
+// change it here AND in privacy.html, and raise NOTICE_VERSION so new consents are recorded against it.
 // ---------------------------------------------------------------------------
-// How long profiles stay. Used in the consent text, the pop-up and the footer.
-const RETENTION_TEXT = "Everything is deleted within 30 days of the event.";
+const NOTICE_VERSION = '2026-10-21';
+const CONTROLLER = 'Malta Employers’ Association';
+const PRIVACY_EMAIL = 'admin@maltaemployers.com';
+// How long profiles stay. Shown in the pop-up, the footer and privacy.html.
+const RETENTION_TEXT = "The app and everything in it are deleted by 31 December 2026.";
 
-// Required tick box: what other attendees (and the big screen) can see.
-const CONSENT_TEXT = "I agree that my name, organisation, role, sector, reasons for attending and what I'm working on are shown to other attendees in this app and on the big screen at the event. My contact details stay private and are only shared with people whose request I accept.";
+// Required tick box: showing the profile to other attendees (GDPR Art. 6(1)(a) consent).
+const CONSENT_TEXT = "I agree to Malta Employers showing my profile (name, organisation, role, sector, reasons for attending and what I'm working on) to other attendees in this app and on the big screen at the event, and to the AI features described in the privacy notice. My contact details stay private unless I accept someone's request to connect.";
 
-// Optional tick box: lets Malta Employers keep the details for its event report.
-const REPORT_CONSENT_TEXT = "Optional: Malta Employers may receive my details, including my contact details, and a record of the connections I make here, to report on the event and keep in touch about similar events.";
+// Optional tick box 1: the event report. Must stay optional and unticked by default.
+const REPORT_CONSENT_TEXT = "Optional: Malta Employers may receive my profile, my contact details (except a hidden mobile) and the names of the people I connect with, for its report on this event.";
+
+// Optional tick box 2: future contact. Separate from the report so each consent is specific.
+const MARKETING_CONSENT_TEXT = "Optional: Malta Employers may email me about similar events and activities.";
+
+// Shown under the tick boxes.
+const CONSENT_FOOTNOTE = "You can untick these or remove your profile at any time from this page. Nothing you enter is used to train AI models.";
 
 // The pop-up everyone sees the first time they open the app. One paragraph per line.
 const INTRO_TITLE = "Before you join";
 const INTRO_TEXT = [
-  "What you add to your profile is public: everyone at the event can see it, and it may appear on the big screen.",
-  "Your mobile, email and LinkedIn are private. They are only shared with someone if they ask to connect and you accept.",
+  "This app is run for Malta Employers’ Association. What you add to your profile is public: everyone at the event can see it, and your name may appear on the big screen.",
+  "Your mobile, email and LinkedIn stay private. They are only shared with someone if they ask to connect and you accept.",
+  "Some features use AI (Claude, by Anthropic): suggested opening lines, a summary of the room, and grouping audience questions. They only use what's in profiles and questions, never contact details, and nothing you enter is used to train AI models.",
   "Only share what you're happy to share. You can change or remove your profile at any time.",
 ];
 

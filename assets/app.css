@@ -233,3 +233,13 @@ footer .linkbtn{font-size:12px}
 .pbars.big .pbar-fill{border-radius:15px}
 .note.big{font-size:clamp(16px,1.3vw,22px)}
 .polls-page .side p{margin:0;color:var(--dim);font-size:14px}
+
+/* privacy notice */
+.notice{max-width:760px;display:flex;flex-direction:column;gap:10px;font-size:15px}
+.notice h2{font:600 19px var(--f);margin:14px 0 0;color:var(--rose)}
+.notice p,.notice ul{margin:0}
+.notice ul{padding-left:20px;display:flex;flex-direction:column;gap:6px}
+.notice a{color:var(--rose)}
+.notice .lead{font-size:16px}
+.notice .btn{color:var(--text);align-self:flex-start}
+.privacy-note{font-size:11.5px;color:var(--dim);margin:0}

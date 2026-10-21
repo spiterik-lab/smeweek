@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700&display=swap">
-<link rel="stylesheet" href="assets/app.css?v=4">
+<link rel="stylesheet" href="assets/app.css?v=5">
 </head>
 <body data-page="attendee">
 <img class="swash" src="assets/img/swash.webp" alt="" aria-hidden="true">
@@ -69,6 +69,8 @@
       <div class="field full"><label class="lbl" for="fWork">What I'm working on <span class="opt">optional</span></label><textarea id="fWork" maxlength="200" placeholder="e.g. Automating bookings for our three guesthouses"></textarea></div>
       <div class="field full"><label class="consent"><input type="checkbox" id="fConsent"> <span id="consentText"></span></label></div>
       <div class="field full"><label class="consent"><input type="checkbox" id="fReport"> <span id="reportText"></span></label></div>
+      <div class="field full"><label class="consent"><input type="checkbox" id="fMarketing"> <span id="marketingText"></span></label></div>
+      <div class="field full"><p class="note"><span id="consentFoot"></span><a href="privacy.html" target="_blank" rel="noopener">Read the full privacy notice</a>.</p></div>
       <div class="field full row"><button class="btn primary" type="submit" id="btnSave">Add me to the map</button><button class="btn ghost" type="button" id="btnRemoveMe" hidden>Remove me</button></div>
       <div class="field full"><span class="note" id="joinMsg" aria-live="polite"></span></div>
     </form>
@@ -125,7 +127,7 @@
     <div class="stack ask" id="pollBody"></div>
   </section>
 
-  <footer><span id="footerText">Profiles are shown only to people at this event.</span> You can change or remove yours at any time from “Add yourself”. <button class="linkbtn" id="btnPrivacy" type="button">How your details are used</button></footer>
+  <footer><span id="footerText">Profiles are shown only to people at this event.</span> You can change or remove yours at any time from “Add yourself”. <button class="linkbtn" id="btnPrivacy" type="button">How your details are used</button> · <a class="linkbtn" href="privacy.html" target="_blank" rel="noopener">Privacy notice</a></footer>
 </div>
 
 <dialog class="sheet" id="introDlg" aria-labelledby="introTitle">
@@ -133,7 +135,7 @@
     <span class="eyebrow">SME Constellation</span>
     <h2 class="section-h" id="introTitle"></h2>
     <div class="stack tight" id="introText"></div>
-    <div class="row"><button class="btn primary" id="introOk" type="button">Got it</button></div>
+    <div class="row"><button class="btn primary" id="introOk" type="button">Got it</button><a class="linkbtn" href="privacy.html" target="_blank" rel="noopener">Full privacy notice</a></div>
   </div>
 </dialog>
 
@@ -144,7 +146,7 @@
 <dialog class="sheet" id="reqDlg" aria-labelledby="reqTitle">
   <div class="sheet-body" id="reqBody"></div>
 </dialog>
-<script src="assets/app.js?v=4"></script>
+<script src="assets/app.js?v=5"></script>
 <script src="assets/polls.js?v=1" data-feature="polls"></script>
 </body>
 </html>
