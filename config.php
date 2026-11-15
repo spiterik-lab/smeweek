@@ -15,8 +15,9 @@ const ADMIN_KEY_HASH = '9c021713ee32535b4595481b1df0a37e122dd5235f8b650b4464a10a
 const EVENT_TITLE = 'Making AI work for SMEs';
 const APP_VERSION = '2.0';
 
-// "Sign in with Google" and "Sign in with Microsoft" (optional). The buttons appear once a client ID is set,
-// either here or on screen.html > Organiser > Sign-in options. Client IDs are not secrets. Setup steps: SETUP-SIGNIN.md
+// Google and Microsoft sign-in are switched OFF (organiser decision, 15 Nov 2026): the app uses email and
+// password only. The code stays in place but nothing is shown or accepted while SOCIAL_SIGNIN is false.
+const SOCIAL_SIGNIN = false;
 const GOOGLE_CLIENT_ID    = '';
 const MICROSOFT_CLIENT_ID = '';
 

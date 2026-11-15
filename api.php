@@ -56,6 +56,7 @@ function settings(): array { static $s = null; return $s ??= read_store('setting
 function api_key(): string { return (string)(settings()['api_key'] ?? '') ?: ANTHROPIC_API_KEY; }
 function ai_on(): bool { return api_key() !== ''; }
 function client_id(string $provider): string {
+  if (!SOCIAL_SIGNIN) return '';
   $c = $provider === 'google' ? GOOGLE_CLIENT_ID : MICROSOFT_CLIENT_ID;
   return trim((string)(settings()[$provider . '_client_id'] ?? '')) ?: $c;
 }
@@ -403,7 +404,7 @@ switch ($action) {
     $acc = accounts(); $id = $acc['emails'][$email] ?? null; $a = $id ? ($acc['byId'][$id] ?? null) : null;
     if (!$a || empty($a['pass']) || !password_verify($pw, $a['pass'])) {
       limit('loginfail', 1000, 600, $who);
-      fail($a && empty($a['pass']) ? 'This account signs in with Google or Microsoft. Use that button, or reset your password to add one.' : 'Wrong email or password.', 403);
+      fail($a && empty($a['pass']) ? 'This account has no password yet. Use "Forgot password" to set one.' : 'Wrong email or password.', 403);
     }
     $d = read_store('people', $empty);
     out(['ok' => true, 'id' => $id, 'token' => new_session($id), 'isNew' => !isset($d['people'][$id]), 'account' => account_view($id, $a)]);
@@ -866,6 +867,7 @@ switch ($action) {
     }
     // Google / Microsoft sign-in: the client IDs are not secrets, they only say which app registration to use.
     if ($op === 'setsignin') {
+      if (!SOCIAL_SIGNIN) fail('Google and Microsoft sign-in are switched off for this event.');
       $g = trim((string)($body['google'] ?? '')); $m = trim((string)($body['microsoft'] ?? ''));
       if ($g !== '' && !preg_match('/^[0-9]+-[a-z0-9]+\.apps\.googleusercontent\.com$/', $g)) fail('That does not look like a Google client ID. It should end with .apps.googleusercontent.com.');
       if ($m !== '' && !preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i', $m)) fail('That does not look like a Microsoft application (client) ID.');

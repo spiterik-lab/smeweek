@@ -53,7 +53,7 @@ poll votes into the Version 1 folder in Version 1's format. The files that were 
 | What people offer and look for | The five Version 1 topics are kept. The three new ones (AI rules, pilots, skills) are dropped. |
 | Meet requests and matches | Kept. Version 1 shows them as connection requests and connections. |
 | Questions and poll votes | Kept. |
-| Accounts (email and password, Google or Microsoft sign-in) | Not used by Version 1. They stay in the Version 2 folder and work again if you return to Version 2. |
+| Accounts (email and password) | Not used by Version 1. They stay in the Version 2 folder and work again if you return to Version 2. |
 | Messages, notifications, points and missions | Not shown by Version 1 (it has no such features). They stay in the Version 2 folder. |
 | Kind of organisation, AI stage, focus areas, who to meet | Not shown by Version 1. They stay in the Version 2 folder. |
 

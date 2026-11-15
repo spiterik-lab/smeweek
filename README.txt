@@ -1,7 +1,7 @@
 SME CONSTELLATION – SETUP ON HOSTINGER (about 10 minutes)
 ========================================================
 
-VERSION 2.0 (November 2026). To go back to Version 1 see ROLLBACK.md. Google / Microsoft sign-in: SETUP-SIGNIN.md.
+VERSION 2.0 (November 2026). To go back to Version 1 see ROLLBACK.md.
 
 WHAT'S IN THE FOLDER
   event.php     >>> EDIT THIS to change the questions, sectors, agenda, Q&A sessions, missions and consent wording <<<
@@ -42,7 +42,7 @@ WHAT'S IN THE FOLDER
    - After the event: "Download attendee list (CSV)" if Malta Employers wants it, then "Clear all profiles".
 
 NOTES
-  - People sign in with an email and password (or Google / Microsoft once switched on, see SETUP-SIGNIN.md).
+  - People sign in with an email and password.
     Phones that joined under Version 1 keep their profile and are asked to add an email and password.
   - Password reset emails are sent by the server from noreply@tetra.com.mt (MAIL_FROM in config.php).
   - Needs PHP 8.0 or newer (Hostinger default). If saving fails, set the data/ folder permissions to 755.

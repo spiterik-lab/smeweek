@@ -226,7 +226,7 @@ function screen(){
   $("adminForm").addEventListener("submit",async e=>{ e.preventDefault(); const k=$("adminKey").value;
     try{ const j=await api("admin",{key:k,op:"check"}); key=k; $("adminLogin").hidden=true; $("adminTools").hidden=false; $("adminMsg").textContent=""; report().catch(()=>{});
       $("keyState").textContent=j.ai?"AI is on. Paste a new key to replace it, or save an empty box to switch AI off.":"AI is off. Paste your key and save to switch it on.";
-      $("gId").value=j.google||""; $("mId").value=j.microsoft||""; $("redirectUri").textContent=j.redirect||""; $("appVersion").textContent="Version "+(j.version||""); }
+      $("appVersion").textContent="Version "+(j.version||""); }
     catch(err){ $("adminMsg").textContent=err.message; } });
   $("keyForm").addEventListener("submit",async e=>{ e.preventDefault();
     try{ const j=await api("admin",{key,op:"setkey",api_key:$("apiKey").value}); $("apiKey").value=""; $("keyState").textContent=j.ai?"Saved. AI is on.":"Key removed. AI is off."; f.refresh(); }
@@ -237,10 +237,6 @@ function screen(){
     $(yesId).addEventListener("click",async()=>{ try{ const j=await api("admin",{key,op}); $("adminMsg").textContent=`Deleted ${j.deleted} ${what}${j.deleted===1?"":"s"}.`; f.refresh(); }
       catch(err){ $("adminMsg").textContent=err.message; } $(boxId).hidden=true; $(btnId).hidden=false; });
   }
-  $("signinForm").addEventListener("submit",async e=>{ e.preventDefault();
-    try{ const j=await api("admin",{key,op:"setsignin",google:$("gId").value,microsoft:$("mId").value});
-      $("signinState").textContent="Saved. "+(j.google?"Google is on. ":"Google is off. ")+(j.microsoft?"Microsoft is on.":"Microsoft is off."); }
-    catch(err){ $("signinState").textContent=err.message; } });
   $("btnRollback").addEventListener("click",()=>{ $("rollbackConfirm").hidden=false; $("btnRollback").hidden=true; });
   $("btnRollbackNo").addEventListener("click",()=>{ $("rollbackConfirm").hidden=true; $("btnRollback").hidden=false; });
   $("btnRollbackYes").addEventListener("click",async()=>{ try{ const j=await api("admin",{key,op:"rollback_export"});
