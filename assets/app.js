@@ -1,5 +1,5 @@
-/* SME Constellation – shared logic for the attendee page (index.html), the big screen (screen.html)
-   and the host's question view (host.html). Event content (questions, sectors, agenda) comes from event.php. */
+/* SME Constellation – logic for the big screen (screen.html), the host's question view (host.html) and the poll screen.
+   The attendee app itself is Version 2: index.html with assets/v2/. Matching rules are shared through assets/match.js. Event content (questions, sectors, agenda) comes from event.php. */
 (() => {
 "use strict";
 let CFG = null, COLOR = {}, SECTOR_ORDER = [];
@@ -8,26 +8,26 @@ let CFG = null, COLOR = {}, SECTOR_ORDER = [];
 // [name, organisation, role, sector, interests, speaker]
 const EX_ROWS = [
  ["Maria","Harbour Light Hotels","Operations Manager","Tourism & hospitality",["training:get","solution:get","network"]],
- ["Luke","Bluegate Logistics","CEO","Shipping, logistics & maritime",["solution:get","practice:get"]],
+ ["Luke","Bluegate Logistics","CEO","Maritime, shipping & logistics",["solution:get","practice:get"]],
  ["Rebecca","Pixelforge Studios","Head of Product","Gaming & digital",["solution:give","practice:give","network"]],
  ["Daniel","Salina Fintech","CTO","Financial services & banking",["practice:give","knowhow:give"]],
  ["Claire","Seabreeze Aquaculture","Founder","Manufacturing",["support:get","knowhow:get"]],
  ["Mark","Aerotech Components","Plant Manager","Manufacturing",["training:get","practice:get"]],
  ["Sarah","Corner Deli Group","Owner","Retail & trade",["knowhow:get","solution:get","network"]],
- ["Nathan","Grid & Ledger Advisory","Partner","Professional services",["knowhow:give","network"]],
- ["Elena","Cloudbay Systems","Solutions Architect","Tech & IT",["solution:give","training:give"]],
- ["Joseph","Skills Forward Agency","Programme Lead","Public body or support agency",["support:give","training:give"],true],
+ ["Nathan","Grid & Ledger Advisory","Partner","HR, recruitment & consulting",["knowhow:give","network"]],
+ ["Elena","Cloudbay Systems","Solutions Architect","Tech, software & IT",["solution:give","training:give"]],
+ ["Joseph","Skills Forward Agency","Programme Lead","Business support & funding agencies",["support:give","training:give"],true],
  ["Anna","Northshore Academy","Director","Education & training",["training:give","knowhow:get"]],
  ["Kurt","Valley Print Works","Managing Director","Retail & trade",["support:get","solution:get"]],
- ["Isabel","Tidewater Yachting","Commercial Manager","Shipping, logistics & maritime",["practice:get","network"]],
- ["Paul","Bright Ledger Accountants","Director","Professional services",["training:get","knowhow:get"]],
+ ["Isabel","Tidewater Yachting","Commercial Manager","Maritime, shipping & logistics",["practice:get","network"]],
+ ["Paul","Bright Ledger Accountants","Director","HR, recruitment & consulting",["training:get","knowhow:get"]],
  ["Julia","Greenroof Energy","Co-founder","Construction & property",["support:get","network"]],
- ["Matthew","Secure Isle IT","Security Lead","Tech & IT",["knowhow:give","practice:give"]],
+ ["Matthew","Secure Isle IT","Security Lead","Tech, software & IT",["knowhow:give","practice:give"]],
  ["Chiara","Care Plus Homes","Operations Director","Health & care",["solution:get","training:get"]],
  ["Ryan","Coastal Villas Collection","Owner","Tourism & hospitality",["support:get","practice:get"]],
  ["Nicole","Harbourline Insurance","HR Manager","Financial services & banking",["training:get","network"]],
- ["Adrian","Workers First Union","Policy Officer","Union or employer association",["knowhow:get","practice:get","network"]],
- ["Sophie","Wordsmith Studio","Founder","Professional services",["solution:give","network"]],
+ ["Adrian","Workers First Union","Policy Officer","Employer bodies, unions & associations",["knowhow:get","practice:get","network"]],
+ ["Sophie","Wordsmith Studio","Founder","HR, recruitment & consulting",["solution:give","network"]],
  ["Karl","Venture Isle Fund","Investment Associate","Financial services & banking",["support:give","network"],true]
 ];
 const EX = EX_ROWS.map((r,i)=>({id:"ex"+i,name:r[0],company:r[1],role:r[2],sector:r[3],interests:r[4],speaker:!!r[5],work:"",example:true}));
@@ -64,6 +64,7 @@ function words(ids){
 
 // ---------- matching ----------
 function score(a,b){
+  if(window.SMEMatch){ const r=window.SMEMatch.score(a,b,CFG); return {s:r.s, why:r.why}; }
   let s=0; const why=[]; const A=new Set(a.interests||[]), B=new Set(b.interests||[]);
   const theyOffer=[], weOffer=[], both=[];
   for(const it of CFG.interests){
@@ -82,7 +83,7 @@ function score(a,b){
 const list = a => a.length<2 ? a.join("") : a.slice(0,-1).join(", ")+" and "+a[a.length-1];
 function links(people){
   const out=[];
-  for(let i=0;i<people.length;i++)for(let j=i+1;j<people.length;j++){const s=Math.max(score(people[i],people[j]).s,score(people[j],people[i]).s); if(s>=3) out.push([i,j,s]);}
+  for(let i=0;i<people.length;i++)for(let j=i+1;j<people.length;j++){const s=Math.max(score(people[i],people[j]).s,score(people[j],people[i]).s); if(s>=3.5) out.push([i,j,s]);}
   return out;
 }
 
@@ -197,340 +198,6 @@ function download(name, text, type){
 }
 
 // ==========================================================
-// ATTENDEE PAGE
-// ==========================================================
-function attendee(){
-  let real=[], ai=false, me=store.get("me"); // me = {id, token, profile}
-  let showEx=false, exTouched=false, contacts={incoming:[],swapped:[],sent:[],declined:[],card:{}};
-  const pick=new Set();
-  const sky=Sky($("sky"),{onPick:p=>openPerson(p)});
-  const people=()=>{ const l=real.slice(); if(showEx) l.push(...EX); return l; };
-  const myProfile=()=> me && real.find(p=>p.id===me.id);
-  const mine=()=> myProfile() || (me?.profile ? {...me.profile,id:me.id} : null);
-  const VIEWS=[...document.querySelectorAll("nav.tabs button")].map(b=>b.dataset.view);
-  const findPerson=id=> people().find(p=>p.id===id);
-
-  api("hello",{device:device()}).catch(()=>{});
-
-  function render(){
-    sky.set(people(), me?.id); setCounts(real);
-    if(!$("view-matches").hidden) renderMatches();
-    if(!$("view-map").hidden) renderPeople();
-    if($("personDlg").open && openId) openPerson(findPerson(openId), true);
-  }
-  const f=feed((p,a)=>{ real=p; ai=a;
-    if(me && !real.some(x=>x.id===me.id)){ me=null; store.del("me"); resetForm(); }
-    if(!exTouched){ showEx=real.length<6; $("exToggle").checked=showEx; }
-    render(); }, 8000);
-
-  // ---------- first-visit pop-up: what is public, what is private ----------
-  $("introTitle").textContent=CFG.intro.title;
-  for(const t of CFG.intro.text) $("introText").append(el("p",null,t));
-  $("introText").append(el("p","note",CFG.retention));
-  $("introOk").addEventListener("click",()=>{ $("introDlg").close(); store.set("introSeen",1); });
-  $("btnPrivacy").addEventListener("click",()=>$("introDlg").showModal());
-  $("footerText").textContent="Profiles are shown only to people at this event. "+CFG.retention;
-  for(const d of document.querySelectorAll("dialog.sheet")) d.addEventListener("click",e=>{ if(e.target===d && d.id!=="introDlg") d.close(); });
-  if(!store.get("introSeen")) $("introDlg").showModal();
-
-  // ---------- connection requests ----------
-  let cTimer=0;
-  async function pollContacts(){
-    clearTimeout(cTimer);
-    if(me){ try{ contacts=await api("contacts",{id:me.id,token:me.token}); }catch{} }
-    else contacts={incoming:[],swapped:[],sent:[],declined:[],card:{}};
-    const n=contacts.incoming.length, badge=$("matchBadge"); badge.textContent=n||""; badge.hidden=!n;
-    document.title=(n?`(${n}) `:"")+document.title.replace(/^\(\d+\) /,"");
-    notify();
-    if(!$("view-matches").hidden) renderMatches();
-    if($("personDlg").open && openId) openPerson(findPerson(openId), true);
-    cTimer=setTimeout(pollContacts, document.hidden?30000:10000);
-  }
-  // Pop up each new request once.
-  function notify(){
-    if($("reqDlg").open || $("introDlg").open) return;
-    const seen=new Set(store.get("notified")||[]);
-    const fresh=contacts.incoming.find(x=>!seen.has(x.id+":"+x.at));
-    if(!fresh) return;
-    seen.add(fresh.id+":"+fresh.at); store.set("notified",[...seen].slice(-200));
-    const body=$("reqBody"); body.replaceChildren();
-    body.append(el("span","eyebrow","Request to connect"), el("h2","section-h",`${fresh.name} would like to connect`));
-    body.append(el("p","meta",[fresh.role,fresh.company].filter(Boolean).join(", ")));
-    if(fresh.msg) body.append(el("blockquote","msg",`“${fresh.msg}”`));
-    body.append(el("p","note",shareNote()));
-    const row=el("div","row");
-    const yes=el("button","btn primary","Accept and share my card"); yes.type="button";
-    yes.onclick=async()=>{ yes.disabled=true; await connect(fresh.id); $("reqDlg").close(); openPerson(findPerson(fresh.id)); };
-    const no=el("button","btn ghost","Not now"); no.type="button"; no.onclick=async()=>{ await decline(fresh.id); $("reqDlg").close(); };
-    const view=el("button","linkbtn","See their profile first"); view.type="button"; view.onclick=()=>{ $("reqDlg").close(); openPerson(findPerson(fresh.id)); };
-    row.append(yes,no); body.append(row,view);
-    try{ navigator.vibrate?.(120); }catch{}
-    $("reqDlg").showModal(); body.tabIndex=-1; body.focus({preventScroll:true});
-  }
-  function shareNote(){
-    const c=contacts.card||{}, have=[c.mobile&&"mobile",c.email&&"email",c.linkedin&&"LinkedIn"].filter(Boolean);
-    return have.length ? `If you accept, they'll see your ${list(have)}, and you'll see theirs.`
-                       : "Your contact card is empty, so they'll only see that you accepted. You can add details under “Add yourself”.";
-  }
-  async function connect(other, undo=false, msg=""){
-    try{ await api("connect",{id:me.id,token:me.token,other,undo,msg}); await pollContacts(); return true; }
-    catch(err){ alertMsg(err.message); return false; }
-  }
-  async function decline(other){ try{ await api("decline",{id:me.id,token:me.token,other}); await pollContacts(); }catch(err){ alertMsg(err.message); } }
-  function alertMsg(t){ const m=$("personDlg").open?$("personMsg"):$("matchIntro"); if(m) m.textContent=t; }
-
-  /** The connect control for one person, in every state. */
-  function connectControl(p){
-    const box=el("div","swap");
-    if(p.example){ box.append(el("span","note","Example attendee, for testing only.")); return box; }
-    if(!me){ const b=el("button","btn ghost small","Add yourself to connect"); b.type="button"; b.onclick=()=>{ $("personDlg").close(); show("join"); }; box.append(b); return box; }
-    const sw=contacts.swapped.find(s=>s.id===p.id);
-    if(sw){
-      box.classList.add("connected"); box.append(el("span","note ok","Connected"));
-      const lines=cardLines(sw.card||{});
-      if(lines.length){ const c=el("div","cardlines"); c.append(...lines); box.append(c);
-        const v=el("button","linkbtn","Save to my phone's contacts"); v.type="button"; v.onclick=()=>download(sw.name.replace(/[^\w ]+/g,"").trim()+".vcf",vcard([sw]),"text/vcard"); box.append(v); }
-      else box.append(el("span","note","They haven't shared contact details, so look out for them in the room."));
-      return box;
-    }
-    const inc=contacts.incoming.find(s=>s.id===p.id) || (contacts.declined.includes(p.id) ? {id:p.id,later:true} : null);
-    if(inc){
-      if(inc.msg) box.append(el("blockquote","msg",`“${inc.msg}”`));
-      box.append(el("span","note",inc.later?"You said “not now” to their request.":"They'd like to connect."));
-      const y=el("button","btn primary small",inc.later?"Accept after all":"Accept and share my card"); y.type="button"; y.onclick=()=>connect(p.id);
-      box.append(y);
-      if(!inc.later){ const n=el("button","btn ghost small","Not now"); n.type="button"; n.onclick=()=>decline(p.id); box.append(n); }
-      return box;
-    }
-    if(contacts.sent.includes(p.id)){
-      box.append(el("span","note","Request sent. Waiting for them to accept. "));
-      const u=el("button","linkbtn","Cancel request"); u.type="button"; u.onclick=()=>connect(p.id,true); box.append(u); return box;
-    }
-    const b=el("button","btn ghost small","Ask to connect"); b.type="button";
-    b.onclick=()=>{ b.remove();
-      const t=el("textarea"); t.maxLength=160; t.value=CFG.requestDefault; t.setAttribute("aria-label","Message with your request");
-      const send=el("button","btn primary small","Send request"); send.type="button";
-      send.onclick=async()=>{ send.disabled=true; if(!await connect(p.id,false,t.value.trim())) send.disabled=false; };
-      const c=el("button","btn ghost small","Cancel"); c.type="button"; c.onclick=()=>box.replaceWith(connectControl(p));
-      box.classList.add("compose"); box.append(el("label","lbl","Add a short message"),t,el("span","note","Your contact card is only shared if they accept."));
-      const r=el("div","row"); r.append(send,c); box.append(r); t.focus(); };
-    box.append(b); return box;
-  }
-
-  // ---------- person details (from the map, the list or a match card) ----------
-  let openId=null;
-  const aiCache=new Map();
-  function openPerson(p, refresh=false){
-    if(!p){ if(refresh) $("personDlg").close(); return; }
-    openId=p.id;
-    const body=$("personBody"); body.replaceChildren();
-    const who=el("div","who"); const dot=el("span","dot"); dot.style.background=COLOR[p.sector]||"#aaa";
-    const h=el("h2","section-h",p.name); h.id="personName"; who.append(dot,h);
-    if(p.speaker) who.append(el("span","flag spk","speaker"));
-    if(p.example) who.append(el("span","flag","example"));
-    if(me && p.id===me.id) who.append(el("span","flag","you"));
-    body.append(who, el("div","meta",[p.role,p.company].filter(Boolean).join(", ")), el("div","meta",p.sector));
-    const m=mine();
-    if(m && p.id!==m.id){ const r=score(m,p); if(r.why.length){ const w=r.why.join("; "); body.append(el("div","why",w.charAt(0).toUpperCase()+w.slice(1)+".")); } }
-    const ws=words(p.interests); if(ws.length){ const tg=el("div","tags"); for(const w of ws) tg.append(el("span","tag",w)); body.append(el("span","lbl","Here for"),tg); }
-    if(p.work) body.append(el("span","lbl","Working on"), el("p",null,p.work));
-    if(!(me && p.id===me.id)){
-      body.append(connectControl(p));
-      if(ai && me && !p.example){
-        const out=el("div","ai"); out.hidden=!aiCache.has(p.id); out.textContent=aiCache.get(p.id)||"";
-        const btn=el("button","btn ghost small","Suggest an opening line"); btn.type="button"; btn.hidden=aiCache.has(p.id);
-        btn.onclick=async()=>{ btn.disabled=true; out.hidden=false; out.textContent="Thinking…";
-          try{ const j=await api("icebreaker",{id:me.id,token:me.token,other:p.id}); const t=`“${j.opener}”${j.explore?"\n\n"+j.explore:""}\n\n${AI_LABEL}`; out.textContent=t; aiCache.set(p.id,t); btn.hidden=true; if(!$("view-matches").hidden) renderMatches(); }
-          catch(err){ out.textContent=err.message; } finally{ btn.disabled=false; } };
-        body.append(btn,out);
-      }
-    }
-    const msg=el("p","note warn"); msg.id="personMsg"; msg.setAttribute("aria-live","polite");
-    const close=el("button","btn ghost","Close"); close.type="button"; close.onclick=()=>$("personDlg").close();
-    body.append(msg, close);
-    if(!$("personDlg").open){ $("personDlg").showModal(); body.tabIndex=-1; body.focus({preventScroll:true}); }
-  }
-  $("personDlg").addEventListener("close",()=>{ openId=null; });
-
-  pollContacts();
-
-  // tabs
-  function show(view){
-    if(!VIEWS.includes(view)) view="join";
-    for(const b of document.querySelectorAll("nav.tabs button")){ const on=b.dataset.view===view; b.setAttribute("aria-selected",String(on)); if(on) b.scrollIntoView({block:"nearest",inline:"nearest"}); }
-    for(const v of VIEWS) $("view-"+v).hidden=v!==view;
-    if(view==="map"){ sky.resize(); renderPeople(); }
-    if(view==="matches") renderMatches();
-    if(view==="agenda") renderAgenda();
-    if(view==="ask") loadQuestions();
-    store.set("tab",view);
-    document.dispatchEvent(new CustomEvent("smec:view",{detail:view}));
-  }
-  for(const b of document.querySelectorAll("nav.tabs button")) b.addEventListener("click",()=>show(b.dataset.view));
-  $("emptyJoin").addEventListener("click",()=>show("join"));
-
-  // form
-  const sel=$("fSector"); sel.append(new Option("Choose a sector (optional)",""));
-  for(const s of SECTOR_ORDER) sel.append(new Option(s,s));
-  $("consentText").textContent=CFG.consent;
-  $("reportText").textContent=CFG.reportConsent;
-  $("marketingText").textContent=CFG.marketingConsent;
-  $("consentFoot").textContent=CFG.consentFootnote+" ";
-  function chip(id,label,box){ const c=el("button","chip",label); c.type="button"; c.dataset.id=id; c.setAttribute("aria-pressed","false");
-    c.addEventListener("click",()=>{ if(pick.has(id)) pick.delete(id); else pick.add(id); c.setAttribute("aria-pressed",String(pick.has(id))); }); box.append(c); }
-  for(const it of CFG.interests) chip(it.key+":give",it.give,$("chipsGive"));
-  for(const it of CFG.interests) chip(it.key+":get",it.get,$("chipsGet"));
-  chip("network",CFG.networking,$("chipsNet"));
-  function msg(t,cls){ const m=$("joinMsg"); m.textContent=t; m.className="note "+(cls||""); }
-  function syncChips(){ for(const c of document.querySelectorAll("#joinForm .chip")) c.setAttribute("aria-pressed",String(pick.has(c.dataset.id))); }
-  function fillForm(p){ $("fName").value=p.name||""; $("fCompany").value=p.company||""; $("fMobile").value=p.mobile||""; $("fRole").value=p.role||"";
-    $("fEmail").value=p.email||""; $("fLinkedin").value=p.linkedin||""; $("fHideMobile").checked=!!p.hide_mobile; $("fReport").checked=!!p.report; $("fMarketing").checked=!!p.marketing;
-    sel.value=p.sector&&p.sector!=="Other"?p.sector:(p.sector||""); $("fWork").value=p.work||""; $("fSpeaker").checked=!!p.speaker;
-    $("fConsent").checked=true; pick.clear(); for(const i of p.interests||[]) pick.add(i); syncChips();
-    $("btnSave").textContent="Update my details"; $("btnRemoveMe").hidden=false; }
-  function resetForm(){ $("joinForm").reset(); pick.clear(); syncChips(); $("btnSave").textContent="Add me to the map"; $("btnRemoveMe").hidden=true; speakerLink(); }
-  // Link for speakers: …/?speaker=1 ticks "I'm a speaker" for them.
-  function speakerLink(){ if(/[?&](speaker|role=speaker)\b/.test(location.search) && !me) $("fSpeaker").checked=true; }
-  if(me?.profile) fillForm(me.profile); else speakerLink();
-
-  $("joinForm").addEventListener("submit",async e=>{
-    e.preventDefault();
-    const p={name:$("fName").value.trim(),company:$("fCompany").value.trim(),mobile:$("fMobile").value.trim(),role:$("fRole").value.trim(),
-             email:$("fEmail").value.trim(),linkedin:$("fLinkedin").value.trim(),hide_mobile:$("fHideMobile").checked,report:$("fReport").checked,marketing:$("fMarketing").checked,
-             sector:sel.value||"Other",interests:[...pick],speaker:$("fSpeaker").checked,work:$("fWork").value.trim()};
-    if(!p.name||!p.company) return msg("Add your name and organisation.","warn");
-    if(!p.interests.length) return msg("Tick at least one reason you're attending.","warn");
-    if(p.marketing && !p.email) return msg("Add your email so Malta Employers can contact you, or untick the email box.","warn");
-    if(!$("fConsent").checked) return msg("Tick the first consent box so others can see your profile.","warn");
-    $("btnSave").disabled=true; msg("Saving…");
-    try{
-      const j=await api("join",{...p,consent:true,id:me?.id||"",token:me?.token||""});
-      const first=!me; me={id:j.id,token:j.token,profile:p}; store.set("me",me); fillForm(p);
-      msg(first?"You're on the map. Opening your matches…":"Saved.","ok"); f.refresh(); pollContacts();
-      if(first) setTimeout(()=>show("matches"),900);
-    }catch(err){ msg(err.message,"warn"); }
-    finally{ $("btnSave").disabled=false; }
-  });
-  $("btnRemoveMe").addEventListener("click",async()=>{
-    if(!me) return;
-    try{ await api("remove",{id:me.id,token:me.token}); }catch(err){ return msg(err.message,"warn"); }
-    me=null; store.del("me"); resetForm(); msg("You've been removed from the map, with your contact card and connections.","ok"); f.refresh(); pollContacts();
-  });
-
-  // matches
-  function renderMatches(){
-    const listEl=$("matchList"); listEl.replaceChildren();
-    const inc=$("incoming"); inc.replaceChildren(); inc.hidden=true;
-    const mc=$("myContacts"); mc.replaceChildren(); mc.hidden=true;
-    const m=mine();
-    if(!m){ $("matchTitle").textContent="Your people to meet"; $("matchIntro").textContent="Add yourself first. Your matches appear here straight away.";
-      const b=el("button","btn primary","Add yourself"); b.type="button"; b.onclick=()=>show("join"); listEl.append(b); return; }
-    if(contacts.incoming.length){ inc.hidden=false; inc.append(el("h3","sub",`Requests to connect (${contacts.incoming.length})`));
-      for(const x of contacts.incoming){ const row=el("div","inc-row"); const nm=el("button","linkbtn name",`${x.name}, ${x.company}`); nm.type="button";
-        nm.onclick=()=>openPerson(findPerson(x.id)); const p=findPerson(x.id)||{...x,interests:[],sector:"Other"}; row.append(nm, connectControl(p)); inc.append(row); } }
-    const ranked=people().filter(p=>p.id!==m.id).map(p=>({p,...score(m,p)})).filter(r=>r.s>0).sort((a,b)=>b.s-a.s).slice(0,3);
-    $("matchTitle").textContent=`${m.name}, your ${ranked.length===1?"best match":"people to meet"}`;
-    $("matchIntro").textContent=ranked.length?"Matched on what you're looking for and what they offer, and the other way round. Tap a name for more, or ask to connect.":"No strong matches yet. Check back as more people join, or browse everyone under “The map”.";
-    for(const r of ranked){
-      const card=el("article","match");
-      const who=el("div","who"); const dot=el("span","dot"); dot.style.background=COLOR[r.p.sector]||"#aaa";
-      const nm=el("button","linkbtn name h",r.p.name); nm.type="button"; nm.onclick=()=>openPerson(r.p);
-      who.append(dot,nm);
-      if(r.p.speaker) who.append(el("span","flag spk","speaker"));
-      if(r.p.example) who.append(el("span","flag","example"));
-      who.append(el("span","score",`${Math.min(99,Math.round(50+r.s*7))}% fit`));
-      const meta=el("div","meta",[r.p.role,r.p.company].filter(Boolean).join(", ")+" · "+r.p.sector);
-      const w=r.why.join("; "); const why=el("div","why",w.charAt(0).toUpperCase()+w.slice(1)+".");
-      card.append(who,meta,why);
-      if(aiCache.has(r.p.id)) card.append(el("div","ai",aiCache.get(r.p.id)));
-      card.append(connectControl(r.p));
-      const more=el("button","linkbtn","See profile"+(ai&&!r.p.example?" and opening line":"")); more.type="button"; more.onclick=()=>openPerson(r.p); card.append(more);
-      listEl.append(card);
-    }
-    if(contacts.swapped.length){ mc.hidden=false;
-      mc.append(el("h3","sub",`My contacts (${contacts.swapped.length})`));
-      for(const x of contacts.swapped){ const row=el("div","inc-row"); const nm=el("button","linkbtn name",`${x.name}, ${x.company}`); nm.type="button";
-        nm.onclick=()=>openPerson(findPerson(x.id)); const c=el("div","cardlines"); const ls=cardLines(x.card||{}); if(ls.length) c.append(...ls); else c.append(el("span","note","No details shared"));
-        row.append(nm,c); mc.append(row); }
-      const all=contacts.swapped.filter(x=>Object.keys(x.card||{}).length);
-      if(all.length){ const b=el("button","btn ghost small","Save all to my phone's contacts"); b.type="button";
-        b.onclick=()=>download("sme-week-contacts.vcf",vcard(all),"text/vcard"); mc.append(b); }
-    }
-  }
-  $("exToggle").addEventListener("change",e=>{ showEx=e.target.checked; exTouched=true; render(); });
-
-  // everyone in the room (under the map)
-  function renderPeople(){
-    const box=$("peopleList"); box.replaceChildren();
-    const q=$("peopleSearch").value.trim().toLowerCase();
-    const l=people().filter(p=>!q || [p.name,p.company,p.role,p.sector].join(" ").toLowerCase().includes(q))
-      .sort((a,b)=>(b.speaker-a.speaker)||a.name.localeCompare(b.name));
-    if(!l.length){ box.append(el("p","note",q?"Nobody matches that search.":"Nobody has joined yet.")); return; }
-    for(const p of l.slice(0,300)){
-      const b=el("button","person"); b.type="button"; const dot=el("span","dot"); dot.style.background=COLOR[p.sector]||"#aaa";
-      const t=el("span","pt"); t.append(el("b",null,p.name+(me&&p.id===me.id?" (you)":"")),el("span","meta",[p.role,p.company].filter(Boolean).join(", ")));
-      b.append(dot,t);
-      if(p.speaker) b.append(el("span","flag spk","speaker")); else if(p.example) b.append(el("span","flag","example"));
-      else if(contacts.swapped.some(s=>s.id===p.id)) b.append(el("span","flag ok","connected"));
-      b.onclick=()=>openPerson(p); box.append(b);
-    }
-  }
-  $("peopleSearch").addEventListener("input",renderPeople);
-
-  // agenda
-  function renderAgenda(){
-    const box=$("agendaList"); box.replaceChildren(); const now=currentItem();
-    for(const a of CFG.agenda){
-      const row=el("div","ag"+(a===now?" now":"")); const t=el("div","ag-time",a.time);
-      const body=el("div","ag-body"); body.append(el("div","ag-title",a.title)); if(a.who) body.append(el("div","ag-who",a.who));
-      if(a===now) body.prepend(el("span","flag live","on now"));
-      row.append(t,body);
-      if(a.qa){ const q=el("button","linkbtn","Ask a question"); q.type="button"; q.onclick=()=>{ $("qSession").value=a.qa; show("ask"); }; body.append(q); }
-      box.append(row);
-    }
-  }
-  setInterval(()=>{ if(!$("view-agenda").hidden) renderAgenda(); }, 60000);
-
-  // questions
-  const qs=$("qSession"); for(const s of CFG.qa) qs.append(new Option(s.label,s.key));
-  const cur=currentItem(); if(cur?.qa) qs.value=cur.qa;
-  let qTimer=0;
-  async function loadQuestions(){
-    clearTimeout(qTimer);
-    try{
-      const j=await api("questions",null,"&session="+encodeURIComponent(qs.value)+"&device="+device());
-      const box=$("qList"); box.replaceChildren();
-      if(!j.items.length) box.append(el("p","note","No questions for this session yet. Be the first."));
-      for(const q of j.items){
-        const row=el("div","q"+(q.answered?" done":""));
-        const v=el("button","vote"+(q.mine?" on":"")); v.type="button"; v.setAttribute("aria-pressed",String(q.mine));
-        v.setAttribute("aria-label",(q.mine?"Remove your vote":"Vote for this question")+`, ${q.votes} vote${q.votes===1?"":"s"}`);
-        v.append(el("span","arrow","▲"),el("span","n",String(q.votes)));
-        v.onclick=async()=>{ try{ await api("vote",{qid:q.id,device:device()}); loadQuestions(); }catch(err){ $("qMsg").textContent=err.message; } };
-        const b=el("div","q-body"); b.append(el("div","q-text",q.text)); b.append(el("div","q-meta",(q.name||"Anonymous")+(q.answered?" · answered":"")));
-        row.append(v,b); box.append(row);
-      }
-    }catch{}
-    if(!$("view-ask").hidden) qTimer=setTimeout(loadQuestions, document.hidden?20000:6000);
-  }
-  qs.addEventListener("change",loadQuestions);
-  $("qName").value=store.get("qname")||"";
-  $("qForm").addEventListener("submit",async e=>{
-    e.preventDefault(); const m=$("qMsg"); m.className="note";
-    const text=$("qText").value.trim(); if(text.length<8){ m.textContent="Write your question in a few more words."; m.className="note warn"; return; }
-    $("qSend").disabled=true;
-    try{ await api("ask",{session:qs.value,text,name:$("qName").value.trim(),device:device()}); store.set("qname",$("qName").value.trim());
-      $("qText").value=""; m.textContent="Sent. Others can vote for it, and the moderator sees it straight away."; m.className="note ok"; loadQuestions(); }
-    catch(err){ m.textContent=err.message; m.className="note warn"; }
-    finally{ $("qSend").disabled=false; }
-  });
-
-  const saved=store.get("tab"); show(saved || (me ? "matches" : "join"));
-}
-
-// ==========================================================
-// BIG SCREEN
-// ==========================================================
 function screen(){
   let real=[], ai=false, exChoice=store.get("screenEx"), showEx=exChoice ?? true;
   const sky=Sky($("sky"),{labelMax:80,big:true});
@@ -558,7 +225,8 @@ function screen(){
   let key="";
   $("adminForm").addEventListener("submit",async e=>{ e.preventDefault(); const k=$("adminKey").value;
     try{ const j=await api("admin",{key:k,op:"check"}); key=k; $("adminLogin").hidden=true; $("adminTools").hidden=false; $("adminMsg").textContent=""; report().catch(()=>{});
-      $("keyState").textContent=j.ai?"AI is on. Paste a new key to replace it, or save an empty box to switch AI off.":"AI is off. Paste your key and save to switch it on."; }
+      $("keyState").textContent=j.ai?"AI is on. Paste a new key to replace it, or save an empty box to switch AI off.":"AI is off. Paste your key and save to switch it on.";
+      $("gId").value=j.google||""; $("mId").value=j.microsoft||""; $("redirectUri").textContent=j.redirect||""; $("appVersion").textContent="Version "+(j.version||""); }
     catch(err){ $("adminMsg").textContent=err.message; } });
   $("keyForm").addEventListener("submit",async e=>{ e.preventDefault();
     try{ const j=await api("admin",{key,op:"setkey",api_key:$("apiKey").value}); $("apiKey").value=""; $("keyState").textContent=j.ai?"Saved. AI is on.":"Key removed. AI is off."; f.refresh(); }
@@ -569,6 +237,15 @@ function screen(){
     $(yesId).addEventListener("click",async()=>{ try{ const j=await api("admin",{key,op}); $("adminMsg").textContent=`Deleted ${j.deleted} ${what}${j.deleted===1?"":"s"}.`; f.refresh(); }
       catch(err){ $("adminMsg").textContent=err.message; } $(boxId).hidden=true; $(btnId).hidden=false; });
   }
+  $("signinForm").addEventListener("submit",async e=>{ e.preventDefault();
+    try{ const j=await api("admin",{key,op:"setsignin",google:$("gId").value,microsoft:$("mId").value});
+      $("signinState").textContent="Saved. "+(j.google?"Google is on. ":"Google is off. ")+(j.microsoft?"Microsoft is on.":"Microsoft is off."); }
+    catch(err){ $("signinState").textContent=err.message; } });
+  $("btnRollback").addEventListener("click",()=>{ $("rollbackConfirm").hidden=false; $("btnRollback").hidden=true; });
+  $("btnRollbackNo").addEventListener("click",()=>{ $("rollbackConfirm").hidden=true; $("btnRollback").hidden=false; });
+  $("btnRollbackYes").addEventListener("click",async()=>{ try{ const j=await api("admin",{key,op:"rollback_export"});
+      $("adminMsg").textContent=`Copied ${j.profiles} profile${j.profiles===1?"":"s"} into the Version 1 folder (${j.written.join(", ")}). The earlier files were kept with "${j.backup_suffix}" in their names.`; }
+    catch(err){ $("adminMsg").textContent=err.message; } $("rollbackConfirm").hidden=true; $("btnRollback").hidden=false; });
   confirmFlow("btnClear","clearConfirm","btnClearYes","btnClearNo","clear","profile");
   confirmFlow("btnQClear","qClearConfirm","btnQClearYes","btnQClearNo","qclear","question");
   const csv=rows=>"\ufeff"+rows.map(r=>r.map(c=>`"${String(c??"").replace(/"/g,'""')}"`).join(",")).join("\r\n");
@@ -578,8 +255,8 @@ function screen(){
   $("btnStats").addEventListener("click",()=>report().catch(err=>$("adminMsg").textContent=err.message));
   $("btnExport").addEventListener("click",async()=>{ try{ const j=await report();
     const rows=[["Only people who agreed to the event report or to future emails are listed. Everyone else is counted in the summary only."],[],
-      ["Name","Organisation","Role","Sector","Speaker","Why attending","Working on","Joined","Agreed to event report","Agreed to future emails","Consent given","Privacy notice version","Mobile","Email","LinkedIn or website","Requests sent","Requests received","Connections made","Connected with"],
-      ...j.people.map(p=>[p.name,p.company,p.role,p.sector,p.speaker?"Yes":"",(p.interests||[]).join("; "),p.work,p.joined,p.report?"Yes":"No",p.marketing?"Yes":"No",p.consent_at,p.consent_v,p.mobile,p.email,p.linkedin,p.requests_sent,p.requests_received,p.connections,p.connected_with]),
+      ["Name","Organisation","Role","Sector","Kind of organisation","AI stage","Focus areas","Wants to meet","Speaker","Offers and looks for","Working on","Joined","Agreed to event report","Agreed to future emails","Consent given","Privacy notice version","Mobile","Email","LinkedIn or website","Requests sent","Requests received","Connections made","Connected with"],
+      ...j.people.map(p=>[p.name,p.company,p.role,p.sector,p.orgtype,p.stage,(p.topics||[]).join("; "),(p.meet||[]).join("; "),p.speaker?"Yes":"",(p.interests||[]).join("; "),p.work,p.joined,p.report?"Yes":"No",p.marketing?"Yes":"No",p.consent_at,p.consent_v,p.mobile,p.email,p.linkedin,p.requests_sent,p.requests_received,p.connections,p.connected_with]),
       [],["Summary"],...Object.entries(j.stats)];
     download(`sme-constellation-people-${stamp()}.csv`,csv(rows),"text/csv"); }catch(err){ $("adminMsg").textContent=err.message; } });
   $("btnExportLinks").addEventListener("click",async()=>{ try{ const j=await report();
@@ -638,7 +315,7 @@ function host(){
   if(!CFG.polls) for(const e of document.querySelectorAll('[data-feature="polls"]')) e.remove();
   window.SMEC={cfg:CFG, api, device, store, el, $};
   const page=document.body.dataset.page;
-  if(page==="screen") screen(); else if(page==="host") host(); else if(page==="attendee") attendee();
+  if(page==="screen") screen(); else if(page==="host") host();
   document.dispatchEvent(new CustomEvent("smec:ready"));
 })();
 })();

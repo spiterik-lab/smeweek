@@ -62,6 +62,13 @@
             <div class="row"><input type="password" id="apiKey" placeholder="sk-ant-…" autocomplete="off" style="flex:1;min-width:0"><button class="btn ghost" type="submit">Save key</button></div>
             <span class="note" id="keyState"></span>
           </form>
+          <form id="signinForm" class="stack tight">
+            <span class="lbl">Sign in with Google or Microsoft (optional, see SETUP-SIGNIN.md)</span>
+            <input type="text" id="gId" placeholder="Google client ID, ends .apps.googleusercontent.com" autocomplete="off">
+            <input type="text" id="mId" placeholder="Microsoft application (client) ID" autocomplete="off">
+            <span class="note">Redirect address to enter at Google and Microsoft: <b id="redirectUri"></b></span>
+            <div class="row"><button class="btn ghost small" type="submit">Save sign-in settings</button><span class="note" id="signinState"></span></div>
+          </form>
           <a class="btn ghost" href="host.html" target="_blank" rel="noopener">Open the host view (questions and polls)</a>
           <a class="btn ghost" href="polls.html" target="_blank" rel="noopener" data-feature="polls">Open the poll results screen</a>
           <div class="stack tight" id="reportBox">
@@ -70,6 +77,12 @@
             <div class="row"><button class="btn ghost small" id="btnStats" type="button">Refresh numbers</button><button class="btn ghost small" id="btnExport" type="button">People (CSV)</button><button class="btn ghost small" id="btnExportLinks" type="button">Connections (CSV)</button></div>
             <span class="note">Contact details and who connected with whom are only included for people who ticked the optional report box.</span>
           </div>
+          <button class="btn ghost" id="btnRollback" type="button">Going back to Version 1? Copy profiles across</button>
+          <div class="confirm" id="rollbackConfirm" hidden>
+            <span class="note warn">Only needed if you are rolling back to Version 1 after people joined on Version 2. It copies profiles, requests, questions and poll votes into the Version 1 folder (the current Version 1 files are kept as dated copies). Messages and accounts are not copied: Version 1 has no place for them.</span>
+            <div class="row"><button class="btn danger" id="btnRollbackYes" type="button">Copy to Version 1</button><button class="btn ghost" id="btnRollbackNo" type="button">Cancel</button></div>
+          </div>
+          <span class="note" id="appVersion"></span>
           <button class="btn danger" id="btnClear" type="button">Clear all profiles</button>
           <div class="confirm" id="clearConfirm" hidden>
             <span class="note warn">This permanently deletes every saved profile, connection and app-visit count.</span>
@@ -92,6 +105,7 @@
   </footer>
 </div>
 <script src="assets/qrcode.js"></script>
-<script src="assets/app.js?v=5"></script>
+<script src="assets/match.js?v=20"></script>
+<script src="assets/app.js?v=20"></script>
 </body>
 </html>

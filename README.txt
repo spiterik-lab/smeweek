@@ -1,17 +1,22 @@
 SME CONSTELLATION – SETUP ON HOSTINGER (about 10 minutes)
 ========================================================
 
+VERSION 2.0 (November 2026). To go back to Version 1 see ROLLBACK.md. Google / Microsoft sign-in: SETUP-SIGNIN.md.
+
 WHAT'S IN THE FOLDER
-  event.php     >>> EDIT THIS to change the questions, sectors, agenda and Q&A sessions <<<
+  event.php     >>> EDIT THIS to change the questions, sectors, agenda, Q&A sessions, missions and consent wording <<<
+  index.html    The attendee app (the lanyard QR opens this). Its code is in assets/v2/ and assets/match.js
+  sw.js, manifest.webmanifest   Make the app installable on phones and deliver notifications
+  screen.html   Big-screen page for the projector (live map, QR code, "Read the room", organiser tools)
   host.html     Host view (organiser password): live polls (open/close) and audience questions
   polls.html    Live poll results for the big screen
-  index.html    Attendee page (the lanyard QR opens this): add yourself, matches, map, agenda, ask a question
-  screen.html   Big-screen page for the projector (live map, QR code, "Read the room", organiser tools)
-  api.php       Saves profiles and talks to the AI
+  api.php       The server: accounts, profiles, meet requests, messages, notifications, missions, AI
+  lib/crypto.php  Notification encryption and the Google / Microsoft sign-in checks
   config.php    Settings: event title and the organiser password (stored as a hash only)
-  assets/       Styles, scripts and the QR generator
-  Saved profiles and the AI key live in a "smeweek-data" folder OUTSIDE the website folder
-  (created automatically), so updates from GitHub never wipe them.
+  assets/match.js  The matching rules, explained in plain words at the top of the file
+  tests/        Automatic checks: "node tests/api-test.mjs" (server) and "node tests/ui-journey.mjs" (the app in a phone-size browser)
+  Saved data lives in a "smeweek-data-v2" folder OUTSIDE the website folder (created automatically),
+  so updates from GitHub never wipe it. Version 1's "smeweek-data" folder is left untouched.
 
 1. DEPLOYMENT
    Deployed automatically from GitHub (spiterik-lab/smeweek, branch main) into its own
@@ -20,11 +25,11 @@ WHAT'S IN THE FOLDER
    tetra.com.mt site, so revamping that site does not touch the app.
    Live address:  https://smeweek.tetra.com.mt/
    Big screen:    https://smeweek.tetra.com.mt/screen.html
-   Saved data:    domains/smeweek.tetra.com.mt/smeweek-data (outside the web folder)
+   Saved data:    domains/smeweek.tetra.com.mt/smeweek-data-v2 (outside the web folder)
    The old address tetra.com.mt/smeweek/ redirects to the new one (.htaccess).
 
 3. TEST
-   - Open the address on your phone and add yourself.
+   - Open the address on your phone, create an account and fill in your profile.
    - Open screen.html on a laptop: you should appear as a star within a few seconds.
    - Organiser panel on screen.html: unlock with the organiser password, paste your Claude API key
      (from https://console.anthropic.com > API keys, with a small credit) and press Save key.
@@ -37,15 +42,18 @@ WHAT'S IN THE FOLDER
    - After the event: "Download attendee list (CSV)" if Malta Employers wants it, then "Clear all profiles".
 
 NOTES
-  - Nobody needs an account. Each phone remembers its own entry so people can edit or remove themselves.
+  - People sign in with an email and password (or Google / Microsoft once switched on, see SETUP-SIGNIN.md).
+    Phones that joined under Version 1 keep their profile and are asked to add an email and password.
+  - Password reset emails are sent by the server from noreply@tetra.com.mt (MAIL_FROM in config.php).
   - Needs PHP 8.0 or newer (Hostinger default). If saving fails, set the data/ folder permissions to 755.
   - Clear profiles after testing and after the event (GDPR: the consent text promises deletion).
 
 PRIVACY NOTES
-  - Contact cards (mobile, email, LinkedIn) are never shown on the map. Someone taps "Ask to connect",
-    the other person gets a pop-up and, if they accept, both see each other's card. "Hide my mobile"
-    keeps the number out of the card even after accepting.
-  - First visit shows a pop-up explaining what is public (and may appear on the big screen) and what is private.
+  - Contact cards (mobile, email, LinkedIn) are never shown on the map. Someone taps "Ask to meet" and chooses
+    which details to share; the other person is notified and, if they accept, chooses what to share back.
+    Either can change what they share with that person afterwards, or ask for a detail in the chat.
+  - Messages are only possible between two people who have both agreed to match.
+  - The sign-in screen has a "Before you join" summary of what is public and what is private.
   - Speaker link: https://smeweek.tetra.com.mt/?speaker=1 ticks "I'm a speaker" automatically.
   - Organiser panel (screen.html): event report numbers plus "People (CSV)" and "Connections (CSV)".
     Contact details and who-connected-with-whom are only included for people who ticked the optional
@@ -59,4 +67,4 @@ LIVE POLLS (optional add-on)
   - Polls are written in event.php (POLLS). Open and close them from host.html; results show on polls.html.
   - Switch off: set ENABLE_POLLS = false in event.php (the Poll tab, host controls and results screen disappear).
   - Remove completely: also delete polls.php, polls.html and assets/polls.js, and the lines marked
-    data-feature="polls" in index.html, host.html and screen.html (and the polls block at the end of app.css).
+    data-feature="polls" in host.html and screen.html.
