@@ -229,12 +229,55 @@ function new_session(string $id): string {
 function account_view(string $id, array $a): array {
   return ['email' => $a['email'] ?? '', 'hasPassword' => !empty($a['pass']), 'google' => !empty($a['google']), 'microsoft' => !empty($a['microsoft'])];
 }
-function send_mail(string $to, string $subject, string $text): bool {
+/** The mailbox the app sends from, set on screen.html > Organiser > Email. Empty user = not set up. */
+function smtp_cfg(): array {
+  $m = settings()['smtp'] ?? [];
+  return ['host' => (string)($m['host'] ?? ''), 'port' => (int)($m['port'] ?? 465), 'user' => (string)($m['user'] ?? ''), 'pass' => (string)($m['pass'] ?? '')];
+}
+/**
+ * Send one plain-text email through the mailbox above (signs in like a mail app, so it is delivered as real mail
+ * from that address). Returns '' on success, or a short reason. Port 465 = SSL from the start, otherwise STARTTLS.
+ */
+function smtp_send(array $c, string $to, string $subject, string $text): string {
+  $plain = (bool)getenv('SMEWEEK_SMTP_PLAIN'); // tests only
+  $fp = @stream_socket_client(($c['port'] === 465 && !$plain ? 'ssl://' : 'tcp://') . $c['host'] . ':' . $c['port'], $en, $es, 12);
+  if (!$fp) return "Could not connect to {$c['host']} on port {$c['port']}" . ($es ? " ($es)" : '') . '.';
+  stream_set_timeout($fp, 12);
+  $read = function () use ($fp) { $out = ''; while (($l = fgets($fp, 1024)) !== false) { $out .= $l; if (strlen($l) < 4 || $l[3] === ' ') break; } return $out; };
+  $cmd = function (string $line, string $expect) use ($fp, $read) { if ($line !== '') fwrite($fp, $line . "\r\n"); $r = $read(); return str_starts_with($r, $expect) ? '' : (trim($r) ?: 'no answer'); };
+  $step = function (string $line, string $expect, string $what) use ($cmd, $fp) { $e = $cmd($line, $expect); if ($e !== '') { @fclose($fp); return "$what: " . substr($e, 0, 160); } return ''; };
+  $host = preg_replace('/[^a-z0-9.\-]/i', '', $_SERVER['HTTP_HOST'] ?? 'localhost') ?: 'localhost';
+  if (($e = $step('', '220', 'The mail server did not greet us')) !== '') return $e;
+  if (($e = $step("EHLO $host", '250', 'The mail server refused the hello')) !== '') return $e;
+  if ($c['port'] !== 465 && !$plain) {
+    if (($e = $step('STARTTLS', '220', 'The mail server would not start encryption')) !== '') return $e;
+    if (!@stream_socket_enable_crypto($fp, true, STREAM_CRYPTO_METHOD_TLS_CLIENT)) { @fclose($fp); return 'Encryption with the mail server failed.'; }
+    if (($e = $step("EHLO $host", '250', 'The mail server refused the hello')) !== '') return $e;
+  }
+  if (($e = $step('AUTH LOGIN', '334', 'The mail server does not accept this sign-in method')) !== '') return $e;
+  if (($e = $step(base64_encode($c['user']), '334', 'The mail server refused the mailbox address')) !== '') return $e;
+  if ($cmd(base64_encode($c['pass']), '235') !== '') { @fclose($fp); return 'The mailbox address or password was not accepted.'; }
+  if (($e = $step("MAIL FROM:<{$c['user']}>", '250', 'The mail server refused the sender')) !== '') return $e;
+  if (($e = $step("RCPT TO:<$to>", '25', 'The mail server refused the recipient')) !== '') return $e;
+  if (($e = $step('DATA', '354', 'The mail server refused the message')) !== '') return $e;
+  $msg = 'From: ' . MAIL_FROM_NAME . " <{$c['user']}>\r\nTo: <$to>\r\nReply-To: " . PRIVACY_EMAIL . "\r\nSubject: =?UTF-8?B?" . base64_encode($subject) . "?=\r\n"
+    . 'Date: ' . date('r') . "\r\nMessage-ID: <" . bin2hex(random_bytes(12)) . '@' . substr(strrchr($c['user'], '@') ?: '@localhost', 1) . ">\r\n"
+    . "MIME-Version: 1.0\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Transfer-Encoding: base64\r\n\r\n" . chunk_split(base64_encode($text));
+  if (($e = $step($msg . "\r\n.", '250', 'The mail server did not accept the message')) !== '') return $e;
+  $cmd('QUIT', '221'); @fclose($fp);
+  return '';
+}
+/** Returns '' when the email was handed over, or a short reason. */
+function send_mail_why(string $to, string $subject, string $text): string {
+  if (getenv('SMEWEEK_MAIL_LOG')) { file_put_contents(DATA_DIR . '/outbox.log', "TO: $to\nSUBJECT: $subject\n$text\n-----\n", FILE_APPEND); return ''; }
+  $c = smtp_cfg();
+  if ($c['user'] !== '' && $c['host'] !== '') return smtp_send($c, $to, $subject, $text);
+  // No mailbox set up: fall back to the web server's own mailer, which many mail providers reject or put in spam.
   $from = MAIL_FROM;
   $headers = "From: " . MAIL_FROM_NAME . " <$from>\r\nReply-To: " . PRIVACY_EMAIL . "\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=utf-8\r\n";
-  if (getenv('SMEWEEK_MAIL_LOG')) { file_put_contents(DATA_DIR . '/outbox.log', "TO: $to\nSUBJECT: $subject\n$text\n-----\n", FILE_APPEND); return true; }
-  return @mail($to, '=?UTF-8?B?' . base64_encode($subject) . '?=', $text, $headers, '-f' . $from);
+  return @mail($to, '=?UTF-8?B?' . base64_encode($subject) . '?=', $text, $headers, '-f' . $from) ? '' : 'The web server refused to send the email.';
 }
+function send_mail(string $to, string $subject, string $text): bool { return send_mail_why($to, $subject, $text) === ''; }
 
 // ---------- notifications ----------
 function person_name(array $P, string $id): string { return $P[$id]['name'] ?? 'Someone'; }
@@ -927,7 +970,29 @@ switch ($action) {
   case 'admin': {
     require_admin($body);
     $op = $body['op'] ?? '';
-    if ($op === 'check') out(['ok' => true, 'ai' => ai_on(), 'google' => client_id('google'), 'microsoft' => client_id('microsoft'), 'redirect' => app_url(), 'version' => APP_VERSION]);
+    if ($op === 'check') out(['ok' => true, 'ai' => ai_on(), 'google' => client_id('google'), 'microsoft' => client_id('microsoft'), 'redirect' => app_url(), 'version' => APP_VERSION,
+      'mail' => ['host' => smtp_cfg()['host'], 'port' => smtp_cfg()['port'], 'user' => smtp_cfg()['user'], 'set' => smtp_cfg()['pass'] !== '']]);
+    // The mailbox that password-reset emails are sent from. The password is kept in the data folder, never shown again.
+    if ($op === 'setmail') {
+      $host = strtolower(trim((string)($body['host'] ?? ''))); $port = (int)($body['port'] ?? 465);
+      $user = clean_email($body['user'] ?? ''); $pass = (string)($body['pass'] ?? '');
+      if ($user === '' && trim((string)($body['user'] ?? '')) === '') { with_store('settings', function (&$st) { unset($st['smtp']); }, []); out(['ok' => true, 'set' => false]); }
+      if ($user === '') fail('Enter the full mailbox address, for example info@yourdomain.com.');
+      if (!preg_match('/^[a-z0-9.\-]{3,80}$/', $host)) fail('Enter the outgoing mail server, for example smtp.titan.email.');
+      if (!in_array($port, [465, 587], true) && !getenv('SMEWEEK_SMTP_PLAIN')) fail('The port should be 465 or 587.');
+      $old = smtp_cfg();
+      if ($pass === '' && $old['user'] === $user) $pass = $old['pass'];
+      if ($pass === '') fail('Enter the mailbox password.');
+      with_store('settings', function (&$st) use ($host, $port, $user, $pass) { $st['smtp'] = ['host' => $host, 'port' => $port, 'user' => $user, 'pass' => $pass]; }, []);
+      out(['ok' => true, 'set' => true]);
+    }
+    if ($op === 'testmail') {
+      limit('testmail', 10, 600);
+      $to = clean_email($body['to'] ?? ''); if ($to === '') fail('Enter the address to send the test to.');
+      $why = send_mail_why($to, 'SME Constellation test email', "This is a test from the SME Constellation organiser panel.\n\nIf you can read this, password reset emails will arrive too.\n");
+      if ($why !== '') fail($why);
+      out(['ok' => true, 'via' => smtp_cfg()['user'] !== '' ? 'mailbox' : 'server']);
+    }
     if ($op === 'setkey') {
       $k = trim((string)($body['api_key'] ?? ''));
       if ($k !== '' && !preg_match('/^sk-ant-[A-Za-z0-9_\-]{20,}$/', $k)) fail('That does not look like a Claude API key. It should start with sk-ant-.');

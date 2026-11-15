@@ -71,6 +71,16 @@
             <div class="row"><input type="password" id="apiKey" placeholder="sk-ant-…" autocomplete="off" style="flex:1;min-width:0"><button class="btn ghost" type="submit">Save key</button></div>
             <span class="note" id="keyState"></span>
           </form>
+          <form id="mailForm" class="stack tight">
+            <span class="lbl">Email (for "forgot password" emails)</span>
+            <span class="note" id="mailState"></span>
+            <input type="email" id="mailUser" placeholder="Mailbox to send from, e.g. info@tetra.com.mt" autocomplete="off">
+            <input type="password" id="mailPass" placeholder="That mailbox's password" autocomplete="new-password">
+            <div class="row"><input type="text" id="mailHost" placeholder="Outgoing server" value="smtp.titan.email" autocomplete="off" style="flex:1;min-width:0"><input type="text" id="mailPort" value="465" inputmode="numeric" style="width:70px" aria-label="Port"></div>
+            <div class="row"><button class="btn ghost small" type="submit">Save email settings</button></div>
+            <div class="row"><input type="email" id="mailTo" placeholder="Send a test email to…" autocomplete="off" style="flex:1;min-width:0"><button class="btn ghost small" type="button" id="btnMailTest">Send test</button></div>
+            <span class="note" id="mailTestState"></span>
+          </form>
           <a class="btn ghost" href="host.html" target="_blank" rel="noopener">Open the host view (questions and polls)</a>
           <a class="btn ghost" href="polls.html" target="_blank" rel="noopener" data-feature="polls">Open the poll results screen</a>
           <div class="stack tight" id="reportBox">
@@ -107,7 +117,7 @@
   </footer>
 </div>
 <script src="assets/qrcode.js"></script>
-<script src="assets/match.js?v=23"></script>
-<script src="assets/app.js?v=23"></script>
+<script src="assets/match.js?v=24"></script>
+<script src="assets/app.js?v=24"></script>
 </body>
 </html>

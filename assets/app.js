@@ -226,8 +226,16 @@ function screen(){
   $("adminForm").addEventListener("submit",async e=>{ e.preventDefault(); const k=$("adminKey").value;
     try{ const j=await api("admin",{key:k,op:"check"}); key=k; $("adminLogin").hidden=true; $("resetBox").hidden=true; $("adminTools").hidden=false; $("adminMsg").textContent=""; report().catch(()=>{});
       $("keyState").textContent=j.ai?"AI is on. Paste a new key to replace it, or save an empty box to switch AI off.":"AI is off. Paste your key and save to switch it on.";
-      $("appVersion").textContent="Version "+(j.version||""); }
+      if(j.mail){ if(j.mail.user){ $("mailUser").value=j.mail.user; $("mailHost").value=j.mail.host; $("mailPort").value=j.mail.port; } mailNote(j.mail); } $("appVersion").textContent="Version "+(j.version||""); }
     catch(err){ $("adminMsg").textContent=err.message; } });
+  const mailNote=m=>{ $("mailState").textContent=m&&m.set?"Emails are sent from "+m.user+". Leave the password box empty to keep the saved one.":"Not set up yet. Until it is, reset emails may not arrive."; };
+  $("mailForm").addEventListener("submit",async e=>{ e.preventDefault();
+    try{ const j=await api("admin",{key,op:"setmail",user:$("mailUser").value,pass:$("mailPass").value,host:$("mailHost").value,port:+$("mailPort").value});
+      $("mailPass").value=""; mailNote({set:j.set,user:$("mailUser").value}); $("mailTestState").textContent=j.set?"Saved. Now send a test.":"Removed."; }
+    catch(err){ $("mailTestState").textContent=err.message; } });
+  $("btnMailTest").addEventListener("click",async()=>{ $("mailTestState").textContent="Sending…";
+    try{ await api("admin",{key,op:"testmail",to:$("mailTo").value}); $("mailTestState").textContent="Sent. Check that inbox (and its spam folder)."; }
+    catch(err){ $("mailTestState").textContent="Not sent: "+err.message; } });
   $("resetForm").addEventListener("submit",async e=>{ e.preventDefault();
     if($("resetPw").value!==$("resetPw2").value){ $("resetState").textContent="The two passwords are not the same."; return; }
     try{ await api("admin_reset",{code:$("resetCode").value,password:$("resetPw").value});
