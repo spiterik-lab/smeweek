@@ -224,10 +224,15 @@ function screen(){
   // organiser tools
   let key="";
   $("adminForm").addEventListener("submit",async e=>{ e.preventDefault(); const k=$("adminKey").value;
-    try{ const j=await api("admin",{key:k,op:"check"}); key=k; $("adminLogin").hidden=true; $("adminTools").hidden=false; $("adminMsg").textContent=""; report().catch(()=>{});
+    try{ const j=await api("admin",{key:k,op:"check"}); key=k; $("adminLogin").hidden=true; $("resetBox").hidden=true; $("adminTools").hidden=false; $("adminMsg").textContent=""; report().catch(()=>{});
       $("keyState").textContent=j.ai?"AI is on. Paste a new key to replace it, or save an empty box to switch AI off.":"AI is off. Paste your key and save to switch it on.";
       $("appVersion").textContent="Version "+(j.version||""); }
     catch(err){ $("adminMsg").textContent=err.message; } });
+  $("resetForm").addEventListener("submit",async e=>{ e.preventDefault();
+    if($("resetPw").value!==$("resetPw2").value){ $("resetState").textContent="The two passwords are not the same."; return; }
+    try{ await api("admin_reset",{code:$("resetCode").value,password:$("resetPw").value});
+      $("adminKey").value=$("resetPw").value; $("resetForm").reset(); $("resetBox").hidden=true; $("adminMsg").textContent="New password saved. Press Unlock."; }
+    catch(err){ $("resetState").textContent=err.message; } });
   $("keyForm").addEventListener("submit",async e=>{ e.preventDefault();
     try{ const j=await api("admin",{key,op:"setkey",api_key:$("apiKey").value}); $("apiKey").value=""; $("keyState").textContent=j.ai?"Saved. AI is on.":"Key removed. AI is off."; f.refresh(); }
     catch(err){ $("keyState").textContent=err.message; } });

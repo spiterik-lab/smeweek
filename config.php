@@ -9,6 +9,11 @@ const ANTHROPIC_API_KEY = '';
 
 // Organiser password, stored only as a SHA-256 hash (the password itself is never in the code).
 // To change it:  php -r "echo hash('sha256', 'NEW PASSWORD');"  and paste the result here.
+// One-time reset: the organiser can choose a new password on screen.html > Organiser > "Forgotten the password?"
+// with a reset code. Only the code's hash is kept here. It works once per site and stops working after the date below.
+// A password chosen that way is kept (as a hash) in the data folder and replaces the one in this file.
+const ADMIN_RESET_HASH  = '41db4c8e2cf40871a18f578480ac9debeb5938b5baf79d9592faad6bf83fc2bc';
+const ADMIN_RESET_UNTIL = '2026-11-30';
 const ADMIN_KEY_HASH = '9c021713ee32535b4595481b1df0a37e122dd5235f8b650b4464a10ac93534ab';
 
 // Event title shown on the pages.

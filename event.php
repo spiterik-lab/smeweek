@@ -210,7 +210,7 @@ const LEVELS = [[0, 'Spark'], [120, 'Star'], [280, 'Navigator'], [450, 'Connecto
 // The full notice is privacy.html. If you change who does what, or how long data is kept,
 // change it here AND in privacy.html, and raise NOTICE_VERSION so new consents are recorded against it.
 // ---------------------------------------------------------------------------
-const NOTICE_VERSION = '2026-11-15';
+const NOTICE_VERSION = '2026-11-15b';
 const CONTROLLER = 'Malta Employers’ Association';
 const PRIVACY_EMAIL = 'admin@maltaemployers.com';
 // How long profiles stay. Shown in the pop-up, the footer and privacy.html.
@@ -234,7 +234,7 @@ const INTRO_TEXT = [
   "This app is run for Malta Employers’ Association. What you add to your profile is public: everyone at the event can see it, and your name may appear on the big screen.",
   "Your sign-in email, mobile and LinkedIn stay private. You choose what to share, person by person, when you match with someone.",
   "Messages are only possible between two people who have both agreed to match, and only the two of you can read them.",
-  "Some features use AI (Claude, by Anthropic): suggested opening lines, a summary of the room, and grouping audience questions. They only use what's in profiles and questions, never contact details or messages, and nothing you enter is used to train AI models.",
+  "Some features use AI (Claude, by Anthropic): suggested opening lines, reading what you typed about your work so it counts in matching, a summary of the room, and grouping audience questions. They only use what's in profiles and questions, never contact details or messages, and nothing you enter is used to train AI models.",
   "Only share what you're happy to share. You can change or delete your profile at any time.",
 ];
 

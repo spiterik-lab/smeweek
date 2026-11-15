@@ -56,6 +56,15 @@
         <form id="adminForm" class="row" style="margin-top:8px"><div id="adminLogin" class="row" style="width:100%">
           <input type="password" id="adminKey" placeholder="Organiser password" autocomplete="off" style="flex:1;min-width:0">
           <button class="btn ghost" type="submit">Unlock</button></div></form>
+        <details id="resetBox" style="margin-top:8px">
+          <summary class="note" style="cursor:pointer">Forgotten the password?</summary>
+          <form id="resetForm" class="stack tight" style="margin-top:8px">
+            <input type="text" id="resetCode" placeholder="One-time reset code" autocomplete="off" autocapitalize="characters">
+            <input type="password" id="resetPw" placeholder="New organiser password (10 characters or more)" autocomplete="new-password">
+            <input type="password" id="resetPw2" placeholder="New password again" autocomplete="new-password">
+            <div class="row"><button class="btn ghost small" type="submit">Set new password</button><span class="note" id="resetState"></span></div>
+          </form>
+        </details>
         <div id="adminTools" hidden class="stack">
           <form id="keyForm" class="stack tight">
             <label class="lbl" for="apiKey">Claude API key (for the AI features)</label>
@@ -98,7 +107,7 @@
   </footer>
 </div>
 <script src="assets/qrcode.js"></script>
-<script src="assets/match.js?v=22"></script>
-<script src="assets/app.js?v=22"></script>
+<script src="assets/match.js?v=23"></script>
+<script src="assets/app.js?v=23"></script>
 </body>
 </html>
