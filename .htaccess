@@ -3,10 +3,23 @@ Options -Indexes
   # These only define settings and print nothing, but keep them off the web anyway
   Require all denied
 </FilesMatch>
+<FilesMatch "\.(md|txt)$">
+  Require all denied
+</FilesMatch>
 
-# The app now lives at https://smeweek.tetra.com.mt/ - the old address tetra.com.mt/smeweek/ redirects there.
 <IfModule mod_rewrite.c>
   RewriteEngine On
+  # The app lives at https://smeweek.tetra.com.mt/ - the old address tetra.com.mt/smeweek/ redirects there.
   RewriteCond %{HTTP_HOST} ^(www\.)?tetra\.com\.mt$ [NC]
   RewriteRule ^(.*)$ https://smeweek.tetra.com.mt/$1 [R=301,L]
+  # Server-side code library: never served
+  RewriteRule ^lib/ - [F,L]
 </IfModule>
+
+# The service worker and the page itself must always be fresh so updates reach phones straight away.
+<IfModule mod_headers.c>
+  <FilesMatch "^(sw\.js|index\.html|manifest\.webmanifest)$">
+    Header set Cache-Control "no-cache"
+  </FilesMatch>
+</IfModule>
+AddType application/manifest+json .webmanifest

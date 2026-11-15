@@ -1,4 +1,10 @@
 <?php
+// ============================================================================
+// SME Constellation, Version 2.0: the server side.
+// Accounts (email + password, Google, Microsoft), profiles, matching data, meet requests,
+// contact sharing, messages, notifications (in-app + Web Push), missions/XP, Q&A, polls, organiser tools.
+// Storage is plain JSON files in a folder OUTSIDE the website folder (see data_dir()).
+// ============================================================================
 declare(strict_types=1);
 require __DIR__ . '/config.php';
 require __DIR__ . '/event.php';
@@ -7,19 +13,25 @@ header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
 header('X-Content-Type-Options: nosniff');
 
-// Saved data lives OUTSIDE the deployed folder so GitHub deployments never wipe it.
-// Preferred: next to public_html (not reachable from the web). Fallback: a protected folder beside the app.
-function data_dir(): string {
-  // App at a site's document root (smeweek.tetra.com.mt/public_html): data goes next to public_html.
-  // App in a subfolder (old tetra.com.mt/public_html/smeweek): data goes next to that site's public_html.
-  $outside = (basename(__DIR__) === 'public_html' ? dirname(__DIR__) : dirname(__DIR__, 2)) . '/smeweek-data';
+// ---------- where the data lives ----------
+// Version 2 keeps its data in "smeweek-data-v2", next to (never inside) the Version 1 folder "smeweek-data".
+// Version 1's folder is only ever READ here (once, to copy the existing profiles across), so rolling back
+// to Version 1 finds its data exactly as it was. See ROLLBACK.md.
+function base_dir(): string { return basename(__DIR__) === 'public_html' ? dirname(__DIR__) : dirname(__DIR__, 2); }
+function pick_dir(string $name): string {
+  $outside = base_dir() . '/' . $name;
   if ((is_dir($outside) || @mkdir($outside, 0755, true)) && is_writable($outside)) return $outside;
-  $beside = dirname(__DIR__) . '/smeweek-data';
+  $beside = dirname(__DIR__) . '/' . $name;
   if (!is_dir($beside)) @mkdir($beside, 0755, true);
   if (!is_file("$beside/.htaccess")) @file_put_contents("$beside/.htaccess", "Require all denied\n");
   return $beside;
 }
-define('DATA_DIR', data_dir());
+$envDir = getenv('SMEWEEK_DATA_DIR');
+define('DATA_DIR', $envDir ? rtrim($envDir, '/') : pick_dir('smeweek-data-v2'));
+define('V1_DIR', $envDir ? rtrim($envDir, '/') . '-v1' : base_dir() . '/smeweek-data');
+define('PUSH_TEST_ENDPOINT', (string)getenv('SMEWEEK_PUSH_TEST'));
+require __DIR__ . '/lib/crypto.php';
+
 define('SECTOR_NAMES', array_column(SECTORS, 0));
 define('INTEREST_IDS', array_merge(
   array_map(fn($k) => "$k:give", array_keys(INTERESTS)),
@@ -27,15 +39,31 @@ define('INTEREST_IDS', array_merge(
   ['network']
 ));
 
-function out(array $a, int $code = 200): never { http_response_code($code); echo json_encode($a, JSON_UNESCAPED_UNICODE); exit; }
-function fail(string $msg, int $code = 400): never { out(['ok' => false, 'error' => $msg], $code); }
-function api_key(): string {
-  static $k = null;
-  if ($k === null) { $st = is_file(DATA_DIR . '/settings.json') ? (json_decode((string)file_get_contents(DATA_DIR . '/settings.json'), true) ?: []) : [];
-    $k = (string)($st['api_key'] ?? '') ?: ANTHROPIC_API_KEY; }
-  return $k;
+$GLOBALS['PUSH_Q'] = [];
+function out(array $a, int $code = 200): never {
+  http_response_code($code); echo json_encode($a, JSON_UNESCAPED_UNICODE);
+  if ($GLOBALS['PUSH_Q']) {
+    // Answer the phone first, then deliver the push notifications.
+    if (function_exists('fastcgi_finish_request')) fastcgi_finish_request();
+    elseif (function_exists('litespeed_finish_request')) litespeed_finish_request();
+    else { @ob_flush(); flush(); }
+    flush_pushes();
+  }
+  exit;
 }
+function fail(string $msg, int $code = 400): never { $GLOBALS['PUSH_Q'] = []; out(['ok' => false, 'error' => $msg], $code); }
+function settings(): array { static $s = null; return $s ??= read_store('settings', []); }
+function api_key(): string { return (string)(settings()['api_key'] ?? '') ?: ANTHROPIC_API_KEY; }
 function ai_on(): bool { return api_key() !== ''; }
+function client_id(string $provider): string {
+  $c = $provider === 'google' ? GOOGLE_CLIENT_ID : MICROSOFT_CLIENT_ID;
+  return trim((string)(settings()[$provider . '_client_id'] ?? '')) ?: $c;
+}
+function app_url(): string {
+  $https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https';
+  $dir = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '/')), '/');
+  return ($https ? 'https' : 'http') . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . $dir . '/';
+}
 
 if (!is_dir(DATA_DIR) && !@mkdir(DATA_DIR, 0755, true)) fail('The data folder could not be created. Check folder permissions.', 500);
 
@@ -61,10 +89,29 @@ function read_store(string $name, array $default): array {
   return $raw ? (json_decode($raw, true) ?: $default) : $default;
 }
 
+/** First run of Version 2: copy the Version 1 data across (Version 1's own files are left untouched). */
+function migrate_from_v1(): void {
+  if (is_file(DATA_DIR . '/.v2')) return;
+  $lock = fopen(DATA_DIR . '/.migrate.lock', 'c'); if (!$lock) return;
+  flock($lock, LOCK_EX);
+  if (!is_file(DATA_DIR . '/.v2')) {
+    $copied = [];
+    if (is_dir(V1_DIR)) foreach (['people', 'contacts', 'declined', 'questions', 'polls', 'settings', 'visits', 'icebreakers'] as $f)
+      if (is_file(V1_DIR . "/$f.json") && !is_file(DATA_DIR . "/$f.json") && @copy(V1_DIR . "/$f.json", DATA_DIR . "/$f.json")) $copied[] = $f;
+    if (in_array('people', $copied, true)) with_store('people', function (&$d) {
+      foreach ($d['people'] as &$p) { $p['sector'] = SECTOR_ALIASES[$p['sector'] ?? ''] ?? ($p['sector'] ?? 'Other'); if (!in_array($p['sector'], SECTOR_NAMES, true)) $p['sector'] = 'Other'; $p['from_v1'] = true; }
+      $d['v'] = ($d['v'] ?? 0) + 1;
+    }, ['v' => 0, 'people' => []]);
+    file_put_contents(DATA_DIR . '/.v2', json_encode(['migrated_at' => date('c'), 'copied_from_v1' => $copied]));
+  }
+  flock($lock, LOCK_UN); fclose($lock);
+}
+migrate_from_v1();
+
 /** Simple per-visitor rate limit (IP is hashed, never stored raw). */
-function limit(string $bucket, int $max, int $window): void {
-  $ip = $_SERVER['HTTP_CF_CONNECTING_IP'] ?? $_SERVER['REMOTE_ADDR'] ?? '0';
-  $key = $bucket . ':' . substr(hash('sha256', $ip . ADMIN_KEY_HASH), 0, 16);
+function ip_hash(): string { $ip = $_SERVER['HTTP_CF_CONNECTING_IP'] ?? $_SERVER['REMOTE_ADDR'] ?? '0'; return substr(hash('sha256', $ip . ADMIN_KEY_HASH), 0, 16); }
+function limit(string $bucket, int $max, int $window, ?string $who = null): void {
+  $key = $bucket . ':' . ($who ?? ip_hash());
   $now = time();
   $ok = with_store('ratelimit', function (&$d) use ($key, $max, $window, $now) {
     foreach ($d as $k => $ts) { $d[$k] = array_values(array_filter($ts, fn($t) => $t > $now - 3600)); if (!$d[$k]) unset($d[$k]); }
@@ -77,7 +124,7 @@ function limit(string $bucket, int $max, int $window): void {
 }
 
 function clean(mixed $v, int $max): string {
-  $s = trim(preg_replace('/\s+/u', ' ', (string)($v ?? '')));
+  $s = trim(preg_replace('/\s+/u', ' ', (string)($v ?? '')) ?? '');
   return mb_substr(strip_tags($s), 0, $max);
 }
 function clean_phone(mixed $v): string {
@@ -98,46 +145,156 @@ function clean_link(mixed $v): string {
   if (!filter_var($s, FILTER_VALIDATE_URL) || mb_strlen($s) > 200) fail('That LinkedIn or website link does not look right.');
   return $s;
 }
-function pick_interests(mixed $v): array {
+function pick(mixed $v, array $allowed, int $max = 99): array {
   if (!is_array($v)) return [];
-  return array_values(array_unique(array_filter($v, fn($x) => is_string($x) && in_array($x, INTEREST_IDS, true))));
+  return array_slice(array_values(array_unique(array_filter($v, fn($x) => is_string($x) && in_array($x, $allowed, true)))), 0, $max);
 }
-/** What everyone in the room may see. Contact details are never included. */
+function good_password(mixed $v): string {
+  $pw = (string)($v ?? '');
+  if (strlen($pw) < 8) fail('Choose a password with at least 8 characters.');
+  if (strlen($pw) > 200) fail('That password is too long.');
+  return $pw;
+}
+
+/** What everyone in the room may see. Sign-in email and contact details are never included. */
 function public_person(string $id, array $p): array {
   return ['id' => $id, 'name' => $p['name'], 'company' => $p['company'], 'role' => $p['role'] ?? '', 'sector' => $p['sector'] ?? 'Other',
-          'interests' => $p['interests'] ?? [], 'speaker' => !empty($p['speaker']), 'work' => $p['work'] ?? ''];
+          'interests' => $p['interests'] ?? [], 'speaker' => !empty($p['speaker']), 'work' => $p['work'] ?? '',
+          'orgtype' => $p['orgtype'] ?? '', 'stage' => $p['stage'] ?? '', 'topics' => $p['topics'] ?? [], 'meet' => $p['meet'] ?? []];
 }
-/** The private "business card" a person shares once they accept (or have accepted) a connection. */
-function card(array $p): array {
-  return array_filter(['mobile' => empty($p['hide_mobile']) ? ($p['mobile'] ?? '') : '', 'email' => $p['email'] ?? '', 'linkedin' => $p['linkedin'] ?? '']);
+/** The private "business card": only the parts its owner chose to share with this one person. */
+function share_of(mixed $req): array {
+  $s = is_array($req) && is_array($req['share'] ?? null) ? $req['share'] : [];
+  return ['mobile' => $s['mobile'] ?? true, 'email' => $s['email'] ?? true, 'linkedin' => $s['linkedin'] ?? true];
 }
-/** contacts.json: $c[from][to] = request. Older entries were a bare timestamp. */
+function card(array $p, ?array $share = null): array {
+  $share ??= ['mobile' => true, 'email' => true, 'linkedin' => true];
+  return array_filter([
+    'mobile' => ($share['mobile'] && empty($p['hide_mobile'])) ? ($p['mobile'] ?? '') : '',
+    'email' => $share['email'] ? ($p['email'] ?? '') : '',
+    'linkedin' => $share['linkedin'] ? ($p['linkedin'] ?? '') : '']);
+}
+/** contacts.json: $c[from][to] = request. Version 1 entries may be a bare timestamp. */
 function req_at(mixed $r): int { return is_array($r) ? (int)($r['at'] ?? 0) : (int)$r; }
 function req_msg(mixed $r): string { return is_array($r) ? (string)($r['msg'] ?? '') : ''; }
+function pair_key(string $a, string $b): string { return strcmp($a, $b) < 0 ? "$a|$b" : "$b|$a"; }
 /** Interests as words, for the AI prompts and the export. */
 function interest_words(array $ids): array {
   $w = [];
   foreach ($ids as $i) {
     if ($i === 'network') { $w[] = NETWORKING_LABEL; continue; }
     [$k, $side] = explode(':', $i) + ['', ''];
-    if (isset(INTERESTS[$k])) $w[] = INTERESTS[$k][$side === 'give' ? 0 : 1];
+    if (isset(INTERESTS[$k])) $w[] = ($side === 'give' ? 'Offers: ' : 'Looking for: ') . INTERESTS[$k][$side === 'give' ? 0 : 1];
   }
   return $w;
 }
-function owns(array $p, string $token): bool { return $token !== '' && hash_equals($p['token_hash'], hash('sha256', $token)); }
-function me_or_fail(array $d, array $body): string {
-  $id = (string)($body['id'] ?? ''); $token = (string)($body['token'] ?? '');
-  if (!isset($d['people'][$id]) || !owns($d['people'][$id], $token)) fail('Add yourself to the map first.', 403);
+
+// ---------- accounts and sessions ----------
+const EMPTY_ACC = ['byId' => [], 'emails' => [], 'ext' => []];
+const EMPTY_PEOPLE = ['v' => 0, 'people' => []];
+const EMPTY_Q = ['v' => 0, 'items' => []];
+function accounts(): array { return read_store('accounts', EMPTY_ACC); }
+/** Signed-in account id, or stop with 401. */
+function auth(array $body): string {
+  $id = (string)($body['id'] ?? ''); $t = (string)($body['token'] ?? '');
+  $a = ($id !== '' && $t !== '') ? (accounts()['byId'][$id] ?? null) : null;
+  if (!$a || !isset($a['sessions'][hash('sha256', $t)])) fail('Please sign in again.', 401);
   return $id;
 }
-function is_admin(array $body): bool { return hash_equals(ADMIN_KEY_HASH, hash('sha256', (string)($body['key'] ?? ''))); }
-/** Organiser password check. Only wrong passwords count towards the lock-out, so host pages can refresh freely. */
-function require_admin(array $body): void {
-  $fails = read_store('ratelimit', []);
-  $ip = $_SERVER['HTTP_CF_CONNECTING_IP'] ?? $_SERVER['REMOTE_ADDR'] ?? '0';
-  $fk = 'adminfail:' . substr(hash('sha256', $ip . ADMIN_KEY_HASH), 0, 16);
-  if (count(array_filter($fails[$fk] ?? [], fn($t) => $t > time() - 600)) >= 10) fail('Too many wrong passwords. Please wait ten minutes.', 429);
-  if (!is_admin($body)) { limit('adminfail', 1000, 600); fail('Wrong organiser password.', 403); }
+function auth_optional(array $body): ?string {
+  $id = (string)($body['id'] ?? ''); $t = (string)($body['token'] ?? '');
+  if ($id === '' || $t === '') return null;
+  $a = accounts()['byId'][$id] ?? null;
+  return ($a && isset($a['sessions'][hash('sha256', $t)])) ? $id : null;
+}
+/** Signed in AND has a profile on the map. */
+function me_or_fail(array $d, array $body): string {
+  $id = auth($body);
+  if (!isset($d['people'][$id])) fail('Finish your profile first.', 403);
+  return $id;
+}
+function new_session(string $id): string {
+  $token = bin2hex(random_bytes(16)); $h = hash('sha256', $token);
+  with_store('accounts', function (&$d) use ($id, $h) {
+    if (!isset($d['byId'][$id])) return;
+    $s = $d['byId'][$id]['sessions'] ?? []; $s[$h] = time(); arsort($s);
+    $d['byId'][$id]['sessions'] = array_slice($s, 0, 8, true);
+  }, EMPTY_ACC);
+  // Version 1 recognises a phone by this hash, so a rollback keeps each person's latest phone signed in.
+  with_store('people', function (&$d) use ($id, $h) { if (isset($d['people'][$id])) $d['people'][$id]['token_hash'] = $h; }, EMPTY_PEOPLE);
+  return $token;
+}
+function account_view(string $id, array $a): array {
+  return ['email' => $a['email'] ?? '', 'hasPassword' => !empty($a['pass']), 'google' => !empty($a['google']), 'microsoft' => !empty($a['microsoft'])];
+}
+function send_mail(string $to, string $subject, string $text): bool {
+  $from = MAIL_FROM;
+  $headers = "From: " . MAIL_FROM_NAME . " <$from>\r\nReply-To: " . PRIVACY_EMAIL . "\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=utf-8\r\n";
+  if (getenv('SMEWEEK_MAIL_LOG')) { file_put_contents(DATA_DIR . '/outbox.log', "TO: $to\nSUBJECT: $subject\n$text\n-----\n", FILE_APPEND); return true; }
+  return @mail($to, '=?UTF-8?B?' . base64_encode($subject) . '?=', $text, $headers, '-f' . $from);
+}
+
+// ---------- notifications ----------
+function person_name(array $P, string $id): string { return $P[$id]['name'] ?? 'Someone'; }
+/** Add an in-app notification and queue a push for the same person. */
+function notify(string $to, string $type, string $from, array $push): void {
+  with_store('notifs', function (&$d) use ($to, $type, $from) {
+    $l = $d[$to] ?? [];
+    if ($type === 'message') $l = array_values(array_filter($l, fn($n) => !($n['type'] === 'message' && $n['from'] === $from && empty($n['read']))));
+    $l[] = ['n' => bin2hex(random_bytes(4)), 'type' => $type, 'from' => $from, 'at' => time(), 'read' => false];
+    $d[$to] = array_slice($l, -40);
+  }, []);
+  $GLOBALS['PUSH_Q'][] = [$to, $push];
+}
+function flush_pushes(): void {
+  $q = $GLOBALS['PUSH_Q']; $GLOBALS['PUSH_Q'] = [];
+  $subs = read_store('push', []); $jobs = [];
+  foreach ($q as [$to, $payload]) foreach ($subs[$to] ?? [] as $s) $jobs[] = [$s, $payload];
+  $gone = push_send($jobs);
+  if ($gone) with_store('push', function (&$d) use ($gone) {
+    foreach ($d as $id => $l) { $d[$id] = array_values(array_filter($l, fn($s) => !in_array($s['endpoint'], $gone, true))); if (!$d[$id]) unset($d[$id]); }
+  }, []);
+}
+function set_flag(string $id, string $key): void {
+  with_store('flags', function (&$d) use ($id, $key) { if (!isset($d[$id][$key])) $d[$id][$key] = time(); }, []);
+}
+
+// ---------- missions, XP and levels ----------
+function strength(?array $p): int {
+  if (!$p) return 0;
+  $s = 40;
+  if (($p['role'] ?? '') !== '') $s += 5;
+  if (($p['sector'] ?? 'Other') !== 'Other') $s += 10;
+  if (($p['orgtype'] ?? '') !== '') $s += 10;
+  if (($p['stage'] ?? '') !== '') $s += 10;
+  if (!empty($p['topics'])) $s += 8;
+  if (!empty($p['meet'])) $s += 7;
+  if (($p['mobile'] ?? '') !== '' || ($p['email'] ?? '') !== '' || ($p['linkedin'] ?? '') !== '') $s += 5;
+  if (($p['work'] ?? '') !== '') $s += 5;
+  return $s;
+}
+function game_state(string $id, array $P, array $C, array $F, array $PUSH): array {
+  $p = $P[$id] ?? null; $f = $F[$id] ?? [];
+  $mine = $C[$id] ?? [];
+  $matches = array_values(array_filter(array_keys($mine), fn($o) => isset($C[$o][$id], $P[$o])));
+  $done = [
+    'intro' => isset($f['intro']), 'basics' => (bool)$p,
+    'org' => $p && ($p['sector'] ?? 'Other') !== 'Other' && ($p['orgtype'] ?? '') !== '' && ($p['stage'] ?? '') !== '',
+    'focus' => $p && !empty($p['topics']) && !empty($p['meet']),
+    'card' => $p && (($p['mobile'] ?? '') !== '' || ($p['email'] ?? '') !== '' || ($p['linkedin'] ?? '') !== ''),
+    'work' => $p && ($p['work'] ?? '') !== '',
+    'install' => isset($f['install']), 'notify' => !empty($PUSH[$id]) || isset($f['notify']),
+    'request' => isset($f['request']) || (bool)array_filter($mine, fn($r) => is_array($r) && !empty($r['init'])),
+    'match1' => count($matches) >= 1, 'match3' => count($matches) >= 3, 'match5' => count($matches) >= 5,
+    'cross' => $p && (bool)array_filter($matches, fn($o) => ($P[$o]['sector'] ?? 'Other') !== ($p['sector'] ?? 'Other')),
+    'speaker' => (bool)array_filter($matches, fn($o) => !empty($P[$o]['speaker'])),
+    'message' => isset($f['message']), 'question' => isset($f['question']), 'poll' => isset($f['poll']), 'brief' => isset($f['brief']),
+  ];
+  $xp = 0; $missions = [];
+  foreach (MISSIONS as $k => [$label, $pts]) { $d = !empty($done[$k]); if ($d) $xp += $pts; $missions[] = ['key' => $k, 'label' => $label, 'xp' => $pts, 'done' => $d]; }
+  $li = 0; foreach (LEVELS as $i => [$need]) if ($xp >= $need) $li = $i;
+  return ['xp' => $xp, 'level' => $li, 'levelName' => LEVELS[$li][1], 'floor' => LEVELS[$li][0], 'next' => LEVELS[$li + 1][0] ?? null,
+          'nextName' => LEVELS[$li + 1][1] ?? null, 'strength' => strength($p), 'missions' => $missions, 'matches' => count($matches)];
 }
 
 function claude(string $prompt, int $maxTokens = 350): string {
@@ -156,6 +313,28 @@ function claude(string $prompt, int $maxTokens = 350): string {
   if (trim($text) === '') fail('The AI service returned an empty answer.', 502);
   return trim($text);
 }
+function is_admin(array $body): bool { return hash_equals(getenv('SMEWEEK_ADMIN_HASH') ?: ADMIN_KEY_HASH, hash('sha256', (string)($body['key'] ?? ''))); }
+/** Organiser password check. Only wrong passwords count towards the lock-out, so host pages can refresh freely. */
+function require_admin(array $body): void {
+  $fails = read_store('ratelimit', []);
+  $fk = 'adminfail:' . ip_hash();
+  if (count(array_filter($fails[$fk] ?? [], fn($t) => $t > time() - 600)) >= 10) fail('Too many wrong passwords. Please wait ten minutes.', 429);
+  if (!is_admin($body)) { limit('adminfail', 1000, 600); fail('Wrong organiser password.', 403); }
+}
+/** Remove one person completely: profile, account, requests, messages, notifications, push subscriptions. */
+function erase_person(string $id): void {
+  with_store('people', function (&$d) use ($id) { if (isset($d['people'][$id])) { unset($d['people'][$id]); $d['v']++; } }, EMPTY_PEOPLE);
+  with_store('accounts', function (&$d) use ($id) {
+    unset($d['byId'][$id]);
+    foreach (['emails', 'ext'] as $ix) foreach ($d[$ix] ?? [] as $k => $v) if ($v === $id) unset($d[$ix][$k]);
+  }, EMPTY_ACC);
+  foreach (['contacts', 'declined', 'reads'] as $f) with_store($f, function (&$c) use ($id) {
+    unset($c[$id]); foreach ($c as $k => $to) { unset($c[$k][$id]); if (!$c[$k]) unset($c[$k]); }
+  }, []);
+  with_store('messages', function (&$m) use ($id) { foreach (array_keys($m) as $k) if (in_array($id, explode('|', (string)$k), true)) unset($m[$k]); }, []);
+  with_store('notifs', function (&$n) use ($id) { unset($n[$id]); foreach ($n as $k => $l) $n[$k] = array_values(array_filter($l, fn($x) => $x['from'] !== $id)); }, []);
+  foreach (['push', 'flags'] as $f) with_store($f, function (&$x) use ($id) { unset($x[$id]); }, []);
+}
 
 $action = $_GET['action'] ?? '';
 $body = [];
@@ -163,8 +342,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   $body = json_decode(file_get_contents('php://input') ?: '[]', true);
   if (!is_array($body)) fail('Bad request.');
 }
-$empty = ['v' => 0, 'people' => []];
-$emptyQ = ['v' => 0, 'items' => []];
+$empty = EMPTY_PEOPLE; $emptyQ = EMPTY_Q;
 
 // Optional live polls add-on (see ENABLE_POLLS in event.php). polls.php handles its own actions and exits.
 $pollsOn = defined('ENABLE_POLLS') && ENABLE_POLLS && is_file(__DIR__ . '/polls.php');
@@ -172,90 +350,289 @@ if ($pollsOn && in_array($action, ['poll', 'pvote', 'padmin'], true)) require __
 
 switch ($action) {
 
-  // ---------- event content (questions, sectors, agenda) ----------
+  // ---------- event content (questions, sectors, agenda, missions) ----------
   case 'config': {
     $interests = [];
     foreach (INTERESTS as $k => [$give, $get, $noun]) $interests[] = ['key' => $k, 'give' => $give, 'get' => $get, 'noun' => $noun];
-    $agenda = array_map(fn($a) => ['time' => $a[0], 'mins' => $a[1], 'title' => $a[2], 'who' => $a[3], 'qa' => $a[4]], AGENDA);
+    $agenda = array_map(fn($a) => ['time' => $a[0], 'mins' => $a[1], 'title' => $a[2], 'who' => $a[3], 'qa' => $a[4], 'people' => $a[5] ?? []], AGENDA);
     $qa = []; foreach (QA_SESSIONS as $k => $label) $qa[] = ['key' => $k, 'label' => $label];
-    out(['ok' => true, 'title' => EVENT_TITLE, 'date' => EVENT_DATE, 'interests' => $interests, 'networking' => NETWORKING_LABEL,
-         'sectors' => SECTORS, 'agenda' => $agenda, 'qa' => $qa, 'consent' => CONSENT_TEXT, 'reportConsent' => REPORT_CONSENT_TEXT,
+    $kv = fn(array $a) => array_map(fn($k, $v) => ['key' => $k, 'label' => is_array($v) ? $v[0] : $v, 'short' => is_array($v) ? ($v[1] ?? $v[0]) : $v], array_keys($a), $a);
+    out(['ok' => true, 'version' => APP_VERSION, 'title' => EVENT_TITLE, 'eventName' => EVENT_NAME, 'venue' => EVENT_VENUE, 'date' => EVENT_DATE,
+         'interests' => $interests, 'networking' => NETWORKING_LABEL, 'sectors' => SECTORS, 'orgTypes' => $kv(ORG_TYPES), 'stages' => $kv(AI_STAGES),
+         'topics' => $kv(TOPICS), 'maxTopics' => MAX_TOPICS, 'meet' => $kv(MEET), 'meetups' => MEETUP_SUGGESTIONS,
+         'levels' => LEVELS, 'agenda' => $agenda, 'qa' => $qa, 'consent' => CONSENT_TEXT, 'reportConsent' => REPORT_CONSENT_TEXT,
          'retention' => RETENTION_TEXT, 'marketingConsent' => MARKETING_CONSENT_TEXT, 'consentFootnote' => CONSENT_FOOTNOTE,
-         'privacyEmail' => PRIVACY_EMAIL, 'controller' => CONTROLLER, 'noticeVersion' => NOTICE_VERSION, 'intro' => ['title' => INTRO_TITLE, 'text' => INTRO_TEXT], 'requestDefault' => REQUEST_DEFAULT,
-         'polls' => $pollsOn]);
+         'privacyEmail' => PRIVACY_EMAIL, 'controller' => CONTROLLER, 'noticeVersion' => NOTICE_VERSION, 'intro' => ['title' => INTRO_TITLE, 'text' => INTRO_TEXT],
+         'requestDefault' => REQUEST_DEFAULT, 'polls' => $pollsOn, 'ai' => ai_on(),
+         'signin' => ['google' => client_id('google') !== '', 'microsoft' => client_id('microsoft') !== ''],
+         'vapid' => vapid()['pub']]);
   }
 
-  // ---------- networking map ----------
+  // ---------- the room (public profiles) ----------
   case 'list': {
     $d = read_store('people', $empty);
     $since = (int)($_GET['since'] ?? -1);
     if ($since === (int)$d['v']) out(['ok' => true, 'v' => $d['v'], 'unchanged' => true]);
     $people = [];
-    foreach ($d['people'] as $id => $p) $people[] = public_person($id, $p);
+    foreach ($d['people'] as $id => $p) $people[] = public_person((string)$id, $p);
     out(['ok' => true, 'v' => $d['v'], 'people' => $people, 'ai' => ai_on(), 'title' => EVENT_TITLE]);
   }
 
-  case 'join': {
-    limit('join', 12, 600);
-    if (empty($body['consent'])) fail('Tick the consent box so others can see your details.');
+  // ---------- accounts ----------
+  case 'register': {
+    limit('register', 12, 600);
+    $email = strtolower(clean_email($body['email'] ?? ''));
+    if ($email === '') fail('Enter your email address.');
+    $hash = password_hash(good_password($body['password'] ?? ''), PASSWORD_DEFAULT);
+    $id = with_store('accounts', function (&$d) use ($email, $hash) {
+      if (isset($d['emails'][$email])) return null;
+      do { $id = bin2hex(random_bytes(6)); } while (isset($d['byId'][$id]));
+      $d['byId'][$id] = ['email' => $email, 'pass' => $hash, 'sessions' => [], 'created' => time()];
+      $d['emails'][$email] = $id; return $id;
+    }, EMPTY_ACC);
+    if ($id === null) fail('There is already an account with this email. Sign in instead, or reset your password.', 409);
+    out(['ok' => true, 'id' => $id, 'token' => new_session($id), 'isNew' => true, 'account' => account_view($id, accounts()['byId'][$id])]);
+  }
+
+  case 'login': {
+    limit('login', 30, 600);
+    $email = strtolower(trim((string)($body['email'] ?? ''))); $pw = (string)($body['password'] ?? '');
+    $who = substr(hash('sha256', $email), 0, 16);
+    $fails = read_store('ratelimit', [])["loginfail:$who"] ?? [];
+    if (count(array_filter($fails, fn($t) => $t > time() - 600)) >= 8) fail('Too many wrong passwords for this email. Wait ten minutes, or reset your password.', 429);
+    $acc = accounts(); $id = $acc['emails'][$email] ?? null; $a = $id ? ($acc['byId'][$id] ?? null) : null;
+    if (!$a || empty($a['pass']) || !password_verify($pw, $a['pass'])) {
+      limit('loginfail', 1000, 600, $who);
+      fail($a && empty($a['pass']) ? 'This account signs in with Google or Microsoft. Use that button, or reset your password to add one.' : 'Wrong email or password.', 403);
+    }
+    $d = read_store('people', $empty);
+    out(['ok' => true, 'id' => $id, 'token' => new_session($id), 'isNew' => !isset($d['people'][$id]), 'account' => account_view($id, $a)]);
+  }
+
+  // A phone that joined under Version 1 (no account) keeps its profile and is asked to add an email and password.
+  case 'claim': {
+    limit('claim', 20, 600);
+    $id = (string)($body['id'] ?? ''); $t = (string)($body['token'] ?? '');
+    $d = read_store('people', $empty); $p = $d['people'][$id] ?? null;
+    if (!$p || $t === '' || empty($p['token_hash']) || !hash_equals($p['token_hash'], hash('sha256', $t))) fail('Please sign in again.', 401);
+    $h = hash('sha256', $t);
+    with_store('accounts', function (&$a) use ($id, $h) {
+      if (!isset($a['byId'][$id])) $a['byId'][$id] = ['email' => '', 'pass' => '', 'sessions' => [], 'created' => time(), 'legacy' => true];
+      $a['byId'][$id]['sessions'][$h] = time();
+    }, EMPTY_ACC);
+    out(['ok' => true, 'id' => $id, 'token' => $t, 'isNew' => false, 'account' => account_view($id, accounts()['byId'][$id])]);
+  }
+
+  // Add or change the email and password of the signed-in account.
+  case 'secure': {
+    $id = auth($body); limit('secure', 10, 600);
+    $email = strtolower(clean_email($body['email'] ?? ''));
+    if ($email === '') fail('Enter your email address.');
+    $hash = password_hash(good_password($body['password'] ?? ''), PASSWORD_DEFAULT);
+    $ok = with_store('accounts', function (&$d) use ($id, $email, $hash) {
+      if (isset($d['emails'][$email]) && $d['emails'][$email] !== $id) return false;
+      $old = $d['byId'][$id]['email'] ?? ''; if ($old !== '' && $old !== $email) unset($d['emails'][$old]);
+      $d['byId'][$id]['email'] = $email; $d['byId'][$id]['pass'] = $hash; $d['emails'][$email] = $id; unset($d['byId'][$id]['legacy']);
+      return true;
+    }, EMPTY_ACC);
+    if (!$ok) fail('Another account already uses this email.', 409);
+    out(['ok' => true, 'account' => account_view($id, accounts()['byId'][$id])]);
+  }
+
+  case 'logout': {
+    $id = auth($body); $h = hash('sha256', (string)$body['token']);
+    with_store('accounts', function (&$d) use ($id, $h) { unset($d['byId'][$id]['sessions'][$h]); }, EMPTY_ACC);
+    $ep = (string)($body['endpoint'] ?? '');
+    if ($ep !== '') with_store('push', function (&$d) use ($id, $ep) { $d[$id] = array_values(array_filter($d[$id] ?? [], fn($s) => $s['endpoint'] !== $ep)); if (!$d[$id]) unset($d[$id]); }, []);
+    out(['ok' => true]);
+  }
+
+  case 'reset_request': {
+    limit('reset', 5, 900);
+    $email = strtolower(trim((string)($body['email'] ?? '')));
+    $id = accounts()['emails'][$email] ?? null;
+    if ($id) {
+      $t = bin2hex(random_bytes(20));
+      with_store('accounts', function (&$d) use ($id, $t) { $d['byId'][$id]['reset'] = [hash('sha256', $t), time() + 3600]; }, EMPTY_ACC);
+      send_mail($email, 'Reset your SME Constellation password',
+        "Hello,\n\nSomeone asked to reset the password for your SME Constellation account (" . EVENT_NAME . ").\n\n"
+        . "Open this link within one hour to choose a new password:\n" . app_url() . "?reset=$t&u=$id\n\n"
+        . "If this wasn't you, ignore this email and your password stays as it is.\n\n" . CONTROLLER);
+    }
+    out(['ok' => true]); // same answer whether or not the email exists
+  }
+
+  case 'reset': {
+    limit('reset2', 10, 900);
+    $id = (string)($body['u'] ?? ''); $t = (string)($body['reset'] ?? '');
+    $hash = password_hash(good_password($body['password'] ?? ''), PASSWORD_DEFAULT);
+    $ok = with_store('accounts', function (&$d) use ($id, $t, $hash) {
+      $r = $d['byId'][$id]['reset'] ?? null;
+      if (!$r || $t === '' || !hash_equals($r[0], hash('sha256', $t)) || $r[1] < time()) return false;
+      $d['byId'][$id]['pass'] = $hash; $d['byId'][$id]['sessions'] = []; unset($d['byId'][$id]['reset']);
+      return true;
+    }, EMPTY_ACC);
+    if (!$ok) fail('That reset link has expired or was already used. Ask for a new one.', 410);
+    $d = read_store('people', $empty);
+    out(['ok' => true, 'id' => $id, 'token' => new_session($id), 'isNew' => !isset($d['people'][$id]), 'account' => account_view($id, accounts()['byId'][$id])]);
+  }
+
+  // ---------- Google / Microsoft sign-in (OpenID Connect, ID token returned to the page) ----------
+  case 'oauth_start': {
+    limit('oauth', 20, 600);
+    $prov = (string)($body['provider'] ?? ''); if (!in_array($prov, ['google', 'microsoft'], true)) fail('Bad request.');
+    $cid = client_id($prov); if ($cid === '') fail('That sign-in option is not switched on.', 503);
+    $nonce = bin2hex(random_bytes(16));
+    with_store('oauth', function (&$d) use ($nonce) { foreach ($d as $k => $t) if ($t < time() - 900) unset($d[$k]); $d[hash('sha256', $nonce)] = time(); }, []);
+    $q = http_build_query(['client_id' => $cid, 'redirect_uri' => app_url(), 'response_type' => 'id_token', 'response_mode' => 'fragment',
+      'scope' => 'openid email profile', 'nonce' => $nonce, 'state' => $prov, 'prompt' => 'select_account']);
+    $base = $prov === 'google' ? 'https://accounts.google.com/o/oauth2/v2/auth' : 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize';
+    out(['ok' => true, 'url' => "$base?$q", 'nonce' => $nonce]);
+  }
+
+  case 'oauth': {
+    limit('oauth', 20, 600);
+    $prov = (string)($body['provider'] ?? ''); $jwt = (string)($body['id_token'] ?? ''); $nonce = (string)($body['nonce'] ?? '');
+    if (!in_array($prov, ['google', 'microsoft'], true) || $jwt === '' || $nonce === '') fail('Bad request.');
+    $cid = client_id($prov); if ($cid === '') fail('That sign-in option is not switched on.', 503);
+    $fresh = with_store('oauth', function (&$d) use ($nonce) { $k = hash('sha256', $nonce); $ok = isset($d[$k]) && $d[$k] > time() - 900; unset($d[$k]); return $ok; }, []);
+    if (!$fresh) fail('That sign-in attempt has expired. Please try again.', 410);
+    $c = verify_rs256($jwt, $prov === 'google' ? 'https://www.googleapis.com/oauth2/v3/certs' : 'https://login.microsoftonline.com/common/discovery/v2.0/keys');
+    if (!$c || ($c['aud'] ?? '') !== $cid || !hash_equals((string)($c['nonce'] ?? ''), $nonce)) fail('We could not confirm that sign-in. Please try again.', 403);
+    if ($prov === 'google') {
+      if (!in_array($c['iss'] ?? '', ['https://accounts.google.com', 'accounts.google.com'], true) || empty($c['email_verified'])) fail('We could not confirm that sign-in. Please try again.', 403);
+      $sub = 'google:' . ($c['sub'] ?? ''); $email = strtolower((string)($c['email'] ?? '')); $verified = true;
+    } else {
+      $tid = (string)($c['tid'] ?? '');
+      if ($tid === '' || ($c['iss'] ?? '') !== "https://login.microsoftonline.com/$tid/v2.0") fail('We could not confirm that sign-in. Please try again.', 403);
+      $sub = "microsoft:$tid:" . ($c['oid'] ?? $c['sub'] ?? ''); $email = strtolower((string)($c['email'] ?? $c['preferred_username'] ?? ''));
+      $verified = false; // Microsoft does not promise the email is verified, so it is never used to take over an existing account.
+    }
+    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) $email = '';
+    $res = with_store('accounts', function (&$d) use ($sub, $email, $verified, $prov) {
+      if (isset($d['ext'][$sub], $d['byId'][$d['ext'][$sub]])) return [$d['ext'][$sub], false];
+      if ($email !== '' && isset($d['emails'][$email])) {
+        if (!$verified) return null;
+        $id = $d['emails'][$email]; $d['ext'][$sub] = $id; $d['byId'][$id][$prov] = true; return [$id, false];
+      }
+      do { $id = bin2hex(random_bytes(6)); } while (isset($d['byId'][$id]));
+      $d['byId'][$id] = ['email' => $email, 'pass' => '', 'sessions' => [], 'created' => time(), $prov => true];
+      if ($email !== '') $d['emails'][$email] = $id;
+      $d['ext'][$sub] = $id; return [$id, true];
+    }, EMPTY_ACC);
+    if ($res === null) fail('There is already an account with this email. Sign in with your email and password.', 409);
+    [$id] = $res; $d = read_store('people', $empty);
+    out(['ok' => true, 'id' => $id, 'token' => new_session($id), 'isNew' => !isset($d['people'][$id]),
+         'name' => clean($c['name'] ?? '', 60), 'account' => account_view($id, accounts()['byId'][$id])]);
+  }
+
+  // ---------- my profile ----------
+  case 'profile': {
+    $id = auth($body); limit('profile', 40, 600);
+    if (empty($body['consent'])) fail('Tick the consent box so others can see your profile.');
     $p = [
       'name' => clean($body['name'] ?? '', 60), 'company' => clean($body['company'] ?? '', 80),
       'mobile' => clean_phone($body['mobile'] ?? ''),
       'email' => clean_email($body['email'] ?? ''), 'linkedin' => clean_link($body['linkedin'] ?? ''),
       'hide_mobile' => !empty($body['hide_mobile']), 'report' => !empty($body['report']), 'marketing' => !empty($body['marketing']),
+      'board' => !isset($body['board']) || !empty($body['board']),
       // Record of consent (GDPR Art. 7(1)): when it was given and which version of the notice was shown.
       'consent_at' => time(), 'consent_v' => NOTICE_VERSION,
       'role' => clean($body['role'] ?? '', 80), 'work' => clean($body['work'] ?? '', 200),
       'sector' => in_array($body['sector'] ?? '', SECTOR_NAMES, true) ? $body['sector'] : 'Other',
-      'interests' => pick_interests($body['interests'] ?? []),
+      'orgtype' => isset(ORG_TYPES[$body['orgtype'] ?? '']) ? $body['orgtype'] : '',
+      'stage' => isset(AI_STAGES[$body['stage'] ?? '']) ? $body['stage'] : '',
+      'topics' => pick($body['topics'] ?? [], array_keys(TOPICS), MAX_TOPICS),
+      'meet' => pick($body['meet'] ?? [], array_keys(MEET)),
+      'interests' => pick($body['interests'] ?? [], INTEREST_IDS),
       'speaker' => !empty($body['speaker']),
     ];
     if ($p['name'] === '' || $p['company'] === '') fail('Add your name and organisation.');
     if ($p['mobile'] !== '' && strlen(preg_replace('/\D/', '', $p['mobile'])) < 8) fail('That mobile number looks too short.');
-    if (!$p['interests']) fail('Tick at least one reason you are attending.');
-    $id = (string)($body['id'] ?? ''); $token = (string)($body['token'] ?? '');
-    $res = with_store('people', function (&$d) use ($p, $id, $token) {
-      if ($id !== '' && isset($d['people'][$id]) && owns($d['people'][$id], $token)) {
-        $d['people'][$id] = array_merge($d['people'][$id], $p, ['at' => time()]);
-        $d['v']++; return ['id' => $id, 'token' => $token];
-      }
+    if (!$p['interests']) fail('Pick at least one thing you can offer or are looking for.');
+    $h = hash('sha256', (string)$body['token']);
+    $res = with_store('people', function (&$d) use ($p, $id, $h) {
+      if (isset($d['people'][$id])) { $d['people'][$id] = array_merge($d['people'][$id], $p, ['at' => time(), 'token_hash' => $h]); $d['v']++; return 'updated'; }
       if (count($d['people']) >= MAX_PEOPLE) return null;
-      $newId = bin2hex(random_bytes(6)); $newToken = bin2hex(random_bytes(16));
-      $d['people'][$newId] = $p + ['token_hash' => hash('sha256', $newToken), 'at' => time(), 'created' => time()];
-      $d['v']++; return ['id' => $newId, 'token' => $newToken];
+      $d['people'][$id] = $p + ['token_hash' => $h, 'at' => time(), 'created' => time()];
+      $d['v']++; return 'created';
     }, $empty);
     if ($res === null) fail('The map is full.', 409);
-    out(['ok' => true] + $res);
+    out(['ok' => true, 'state' => $res]);
   }
 
+  // Delete my account and everything attached to it.
   case 'remove': {
-    $id = (string)($body['id'] ?? ''); $token = (string)($body['token'] ?? '');
-    $done = with_store('people', function (&$d) use ($id, $token) {
-      if (!isset($d['people'][$id]) || !owns($d['people'][$id], $token)) return false;
-      unset($d['people'][$id]); $d['v']++; return true;
-    }, $empty);
-    if ($done) foreach (['contacts', 'declined'] as $f) with_store($f, function (&$c) use ($id) {
-      unset($c[$id]); foreach ($c as $k => $to) { unset($c[$k][$id]); if (!$c[$k]) unset($c[$k]); }
-    }, []);
-    out(['ok' => true, 'removed' => $done]);
+    $id = auth($body);
+    erase_person($id);
+    out(['ok' => true, 'removed' => true]);
   }
 
-  // ---------- connection requests (contact details are swapped only when both agree) ----------
+  // ---------- one call that keeps the phone up to date ----------
+  case 'sync': {
+    $id = auth($body);
+    $acc = accounts()['byId'][$id];
+    $d = read_store('people', $empty); $P = $d['people']; $me = $P[$id] ?? null;
+    $C = read_store('contacts', []); $dec = read_store('declined', [])[$id] ?? [];
+    $F = read_store('flags', []); $PUSH = read_store('push', []);
+    $mine = $C[$id] ?? [];
+    $incoming = []; $matches = []; $sent = [];
+    if ($me) {
+      $M = read_store('messages', []); $R = read_store('reads', [])[$id] ?? [];
+      foreach ($C as $from => $to) {
+        $from = (string)$from;
+        if ($from === $id || !isset($to[$id]) || !isset($P[$from])) continue;
+        $p = $P[$from];
+        $who = ['id' => $from, 'name' => $p['name'], 'company' => $p['company'], 'role' => $p['role'] ?? ''];
+        if (isset($mine[$from])) {
+          $thread = $M[pair_key($id, $from)] ?? []; $seen = (int)($R[$from] ?? 0); $last = $thread ? end($thread) : null;
+          $matches[] = $who + ['card' => (object)card($p, share_of($to[$id])), 'myShare' => share_of($mine[$from]),
+            'at' => max(req_at($to[$id]), req_at($mine[$from])),
+            'unread' => count(array_filter($thread, fn($m) => $m['f'] === $from && ($m['n'] ?? 0) > $seen)),
+            'last' => $last ? ['t' => $last['t'], 'at' => $last['at'], 'mine' => $last['f'] === $id] : null];
+        } elseif (!isset($dec[$from])) $incoming[] = $who + ['msg' => req_msg($to[$id]), 'at' => req_at($to[$id])];
+      }
+      $mIds = array_column($matches, 'id');
+      foreach ($mine as $to => $r) if (isset($P[$to]) && !in_array((string)$to, $mIds, true)) $sent[] = (string)$to;
+      usort($matches, fn($a, $b) => max($b['at'], $b['last']['at'] ?? 0) <=> max($a['at'], $a['last']['at'] ?? 0));
+      usort($incoming, fn($a, $b) => $b['at'] <=> $a['at']);
+    }
+    $notifs = [];
+    foreach (array_reverse(read_store('notifs', [])[$id] ?? []) as $n) {
+      if (!isset($P[$n['from']])) continue;
+      $notifs[] = $n + ['name' => $P[$n['from']]['name'], 'company' => $P[$n['from']]['company']];
+    }
+    $private = $me ? array_diff_key($me, ['token_hash' => 1]) : null;
+    out(['ok' => true, 'v' => $d['v'], 'account' => account_view($id, $acc), 'profile' => $private,
+         'incoming' => $incoming, 'matches' => $matches, 'sent' => $sent, 'declined' => array_map('strval', array_keys($dec)),
+         'notifs' => $notifs, 'unread' => count(array_filter($notifs, fn($n) => empty($n['read']))),
+         'game' => game_state($id, $P, $C, $F, $PUSH), 'push' => count($PUSH[$id] ?? []), 'ai' => ai_on()]);
+  }
+
+  // ---------- meet requests (contact details are swapped only when both agree) ----------
   case 'connect': {
-    limit('connect', 40, 600);
-    $d = read_store('people', $empty);
+    limit('connect', 60, 600);
+    $d = read_store('people', $empty); $P = $d['people'];
     $me = me_or_fail($d, $body);
     $other = (string)($body['other'] ?? '');
-    if (!isset($d['people'][$other]) || $other === $me) fail('That person is no longer on the map.', 404);
+    if (!isset($P[$other]) || $other === $me) fail('That person is no longer on the map.', 404);
     $undo = !empty($body['undo']);
-    $msg = clean($body['msg'] ?? '', 160);
-    with_store('contacts', function (&$c) use ($me, $other, $undo, $msg) {
-      if ($undo) { unset($c[$me][$other]); if (empty($c[$me])) unset($c[$me]); }
-      elseif (!isset($c[$me][$other])) $c[$me][$other] = ['at' => time(), 'msg' => $msg];
+    $msg = clean($body['msg'] ?? '', 200);
+    $sh = is_array($body['share'] ?? null) ? $body['share'] : [];
+    $share = ['mobile' => !isset($sh['mobile']) || !empty($sh['mobile']), 'email' => !isset($sh['email']) || !empty($sh['email']), 'linkedin' => !isset($sh['linkedin']) || !empty($sh['linkedin'])];
+    $state = with_store('contacts', function (&$c) use ($me, $other, $undo, $msg, $share) {
+      $back = isset($c[$other][$me]);
+      if ($undo) { unset($c[$me][$other]); if (empty($c[$me])) unset($c[$me]); return 'cancelled'; }
+      if (isset($c[$me][$other])) return 'same';
+      $c[$me][$other] = ['at' => time(), 'msg' => $msg, 'share' => $share] + ($back ? [] : ['init' => true]);
+      return $back ? 'matched' : 'requested';
     }, []);
     // Accepting clears an earlier "not now"; cancelling leaves the other person's choice alone.
     if (!$undo) with_store('declined', function (&$x) use ($me, $other) { unset($x[$me][$other]); if (empty($x[$me])) unset($x[$me]); }, []);
-    out(['ok' => true]);
+    $n = $P[$me]['name'];
+    if ($state === 'requested') notify($other, 'request', $me, ['title' => "$n would like to meet you", 'body' => $msg !== '' ? "“{$msg}”" : trim(($P[$me]['role'] ?? '') . ', ' . $P[$me]['company'], ', '), 'tag' => "req-$me", 'url' => './?open=requests']);
+    if ($state === 'matched') notify($other, 'match', $me, ['title' => "It’s a match with $n", 'body' => 'You can now message each other and swap contact details.', 'tag' => "match-$me", 'url' => "./?open=match&with=$me"]);
+    out(['ok' => true, 'state' => $state]);
   }
 
   case 'decline': {
@@ -266,25 +643,102 @@ switch ($action) {
     out(['ok' => true]);
   }
 
-  case 'contacts': {
+  // Change which contact details I share with one of my matches.
+  case 'share': {
     $d = read_store('people', $empty);
-    $me = me_or_fail($d, $body);
-    $c = read_store('contacts', []);
-    $dec = read_store('declined', [])[$me] ?? [];
-    $mine = $c[$me] ?? [];
-    $incoming = []; $swapped = []; $sent = [];
-    foreach ($c as $from => $to) {
-      if ($from === $me || !isset($to[$me]) || !isset($d['people'][$from])) continue;
-      $p = $d['people'][$from];
-      $who = ['id' => $from, 'name' => $p['name'], 'company' => $p['company'], 'role' => $p['role'] ?? ''];
-      if (isset($mine[$from])) $swapped[] = $who + ['card' => (object)card($p), 'at' => max(req_at($to[$me]), req_at($mine[$from]))];
-      elseif (!isset($dec[$from])) $incoming[] = $who + ['msg' => req_msg($to[$me]), 'at' => req_at($to[$me])];
-    }
-    $swappedIds = array_column($swapped, 'id');
-    foreach ($mine as $to => $r) if (isset($d['people'][$to]) && !in_array($to, $swappedIds, true)) $sent[] = $to;
-    usort($swapped, fn($a, $b) => $b['at'] <=> $a['at']);
-    out(['ok' => true, 'incoming' => $incoming, 'swapped' => $swapped, 'sent' => $sent,
-         'declined' => array_keys($dec), 'card' => (object)card($d['people'][$me])]);
+    $me = me_or_fail($d, $body); $other = (string)($body['other'] ?? '');
+    $sh = is_array($body['share'] ?? null) ? $body['share'] : [];
+    $ok = with_store('contacts', function (&$c) use ($me, $other, $sh) {
+      if (!isset($c[$me][$other], $c[$other][$me])) return false;
+      if (!is_array($c[$me][$other])) $c[$me][$other] = ['at' => (int)$c[$me][$other], 'msg' => ''];
+      $c[$me][$other]['share'] = ['mobile' => !empty($sh['mobile']), 'email' => !empty($sh['email']), 'linkedin' => !empty($sh['linkedin'])];
+      return true;
+    }, []);
+    if (!$ok) fail('You can only share details with someone you have matched with.', 403);
+    out(['ok' => true]);
+  }
+
+  // ---------- messages between two matched people ----------
+  case 'msg_send': {
+    limit('msg', 150, 600);
+    $d = read_store('people', $empty); $P = $d['people'];
+    $me = me_or_fail($d, $body); $other = (string)($body['other'] ?? '');
+    $C = read_store('contacts', []);
+    if (!isset($P[$other], $C[$me][$other], $C[$other][$me])) fail('You can message someone once you have both agreed to match.', 403);
+    $text = clean($body['text'] ?? '', 500);
+    $ask = in_array($body['ask'] ?? '', ['mobile', 'email', 'linkedin'], true) ? $body['ask'] : '';
+    if ($ask !== '') $text = 'Could you share your ' . ['mobile' => 'mobile number', 'email' => 'email address', 'linkedin' => 'LinkedIn'][$ask] . ' with me?';
+    if ($text === '') fail('Write a message first.');
+    $m = ['f' => $me, 't' => $text, 'at' => time()] + ($ask !== '' ? ['ask' => $ask] : []);
+    $m = with_store('messages', function (&$x) use ($me, $other, $m) {
+      $k = pair_key($me, $other); $last = !empty($x[$k]) ? end($x[$k]) : null;
+      $m['n'] = (int)($last['n'] ?? 0) + 1; $x[$k][] = $m; $x[$k] = array_slice($x[$k], -300); return $m;
+    }, []);
+    with_store('reads', function (&$r) use ($me, $other, $m) { $r[$me][$other] = max((int)($r[$me][$other] ?? 0), $m['n'] - 1); }, []);
+    set_flag($me, 'message');
+    notify($other, 'message', $me, ['title' => $P[$me]['name'], 'body' => mb_substr($text, 0, 140), 'tag' => "msg-$me", 'url' => "./?open=chat&with=$me"]);
+    out(['ok' => true, 'msg' => $m]);
+  }
+
+  case 'msgs': {
+    $d = read_store('people', $empty);
+    $me = me_or_fail($d, $body); $other = (string)($body['other'] ?? '');
+    $C = read_store('contacts', []);
+    if (!isset($C[$me][$other], $C[$other][$me])) fail('You can message someone once you have both agreed to match.', 403);
+    $thread = read_store('messages', [])[pair_key($me, $other)] ?? [];
+    $seen = $thread ? (int)(end($thread)['n'] ?? 0) : 0;
+    with_store('reads', function (&$r) use ($me, $other, $seen) { $r[$me][$other] = $seen; }, []);
+    with_store('notifs', function (&$n) use ($me, $other) {
+      foreach ($n[$me] ?? [] as $i => $x) if ($x['from'] === $other && $x['type'] === 'message') $n[$me][$i]['read'] = true;
+    }, []);
+    out(['ok' => true, 'items' => array_map(fn($m) => ['mine' => $m['f'] === $me, 't' => $m['t'], 'at' => $m['at'], 'ask' => $m['ask'] ?? ''], $thread)]);
+  }
+
+  case 'notif_read': {
+    $id = auth($body);
+    with_store('notifs', function (&$n) use ($id) { foreach ($n[$id] ?? [] as $i => $x) $n[$id][$i]['read'] = true; }, []);
+    out(['ok' => true]);
+  }
+
+  // ---------- push notifications ----------
+  case 'push_sub': {
+    $id = auth($body); limit('push', 20, 600);
+    $s = is_array($body['sub'] ?? null) ? $body['sub'] : [];
+    $sub = ['endpoint' => (string)($s['endpoint'] ?? ''), 'p256dh' => (string)($s['keys']['p256dh'] ?? ''), 'auth' => (string)($s['keys']['auth'] ?? ''), 'at' => time()];
+    if (strlen($sub['endpoint']) > 800 || !push_host_ok($sub['endpoint']) || $sub['p256dh'] === '' || $sub['auth'] === '') fail('This browser could not be set up for notifications.');
+    with_store('push', function (&$d) use ($id, $sub) {
+      $l = array_values(array_filter($d[$id] ?? [], fn($x) => $x['endpoint'] !== $sub['endpoint']));
+      $l[] = $sub; $d[$id] = array_slice($l, -5);
+    }, []);
+    if (!empty($body['test'])) $GLOBALS['PUSH_Q'][] = [$id, ['title' => 'Notifications are on', 'body' => 'You’ll hear when someone wants to meet you or you make a match.', 'tag' => 'test', 'url' => './']];
+    out(['ok' => true]);
+  }
+
+  case 'push_unsub': {
+    $id = auth($body); $ep = (string)($body['endpoint'] ?? '');
+    with_store('push', function (&$d) use ($id, $ep) { $d[$id] = array_values(array_filter($d[$id] ?? [], fn($s) => $ep !== '' && $s['endpoint'] !== $ep)); if (!$d[$id]) unset($d[$id]); }, []);
+    out(['ok' => true]);
+  }
+
+  // Small things the phone reports for the missions (watched the opening, installed the app, voted, read the brief).
+  case 'flag': {
+    $id = auth($body); $k = (string)($body['key'] ?? '');
+    if (!in_array($k, ['intro', 'install', 'poll', 'brief', 'notify'], true)) fail('Bad request.');
+    set_flag($id, $k);
+    out(['ok' => true]);
+  }
+
+  case 'leaderboard': {
+    $id = auth($body);
+    $d = read_store('people', $empty); $P = $d['people'];
+    $C = read_store('contacts', []); $F = read_store('flags', []); $PUSH = read_store('push', []);
+    $rows = [];
+    foreach ($P as $pid => $p) { $pid = (string)$pid; $g = game_state($pid, $P, $C, $F, $PUSH);
+      $rows[] = ['id' => $pid, 'name' => $p['name'], 'company' => $p['company'], 'sector' => $p['sector'] ?? 'Other', 'xp' => $g['xp'], 'level' => $g['levelName'], 'matches' => $g['matches'], 'show' => !isset($p['board']) || !empty($p['board'])]; }
+    usort($rows, fn($a, $b) => [$b['xp'], $a['name']] <=> [$a['xp'], $b['name']]);
+    $rank = null; foreach ($rows as $i => $r) if ($r['id'] === $id) $rank = $i + 1;
+    $top = array_slice(array_values(array_filter($rows, fn($r) => $r['show'] && $r['xp'] > 0)), 0, 10);
+    out(['ok' => true, 'top' => array_map(fn($r) => array_diff_key($r, ['show' => 1]), $top), 'rank' => $rank, 'of' => count($rows)]);
   }
 
   // ---------- counts how many phones opened the app, for the event report ----------
@@ -307,7 +761,12 @@ switch ($action) {
     if (isset($cache[$key])) out(['ok' => true] + $cache[$key]);
     limit('ai', 15, 600);
     $a = public_person($id, $d['people'][$id]); $b = public_person($other, $d['people'][$other]);
-    foreach ([&$a, &$b] as &$x) { $x['interests'] = interest_words($x['interests']); unset($x['id'], $x['hasMobile']); } unset($x);
+    foreach ([&$a, &$b] as &$x) {
+      $x['interests'] = interest_words($x['interests']);
+      $x['organisation_type'] = ORG_TYPES[$x['orgtype']] ?? ''; $x['ai_stage'] = AI_STAGES[$x['stage']][0] ?? '';
+      $x['focus_areas'] = array_values(array_intersect_key(TOPICS, array_flip($x['topics'])));
+      unset($x['id'], $x['orgtype'], $x['stage'], $x['topics'], $x['meet']);
+    } unset($x);
     $prompt = "Two people are at a Maltese business conference called \"" . EVENT_TITLE . "\". Write a warm, specific opening line "
       . "person A could use when walking up to person B, plus one sentence on what they could explore together. Plain English, "
       . "no jargon, under 60 words in total. Reply with only JSON: {\"opener\": string, \"explore\": string}.\n"
@@ -330,10 +789,11 @@ switch ($action) {
     }
     limit('insight', 6, 600);
     $rows = [];
-    foreach ($d['people'] as $p) $rows[] = '- ' . ($p['sector'] ?? 'Other') . ' | ' . (($p['role'] ?? '') ?: '?') . (!empty($p['speaker']) ? ' | speaker' : '')
-      . ' | here for: ' . implode('; ', interest_words($p['interests'] ?? []));
+    foreach ($d['people'] as $p) $rows[] = '- ' . ($p['sector'] ?? 'Other') . ' | ' . (ORG_TYPES[$p['orgtype'] ?? ''] ?? '?') . ' | ' . (($p['role'] ?? '') ?: '?')
+      . ' | AI stage: ' . (AI_STAGES[$p['stage'] ?? ''][1] ?? '?') . (!empty($p['speaker']) ? ' | speaker' : '')
+      . ' | ' . implode('; ', interest_words($p['interests'] ?? []));
     $prompt = "You are helping the host of an SME conference in Malta (\"" . EVENT_TITLE . "\") read the room from a live networking "
-      . "sign-up. Below is one line per attendee (sector | role | why they are attending). Write a short, upbeat summary the host can "
+      . "sign-up. Below is one line per attendee (sector | kind of organisation | role | AI stage | what they offer and look for). Write a short, upbeat summary the host can "
       . "read aloud from the stage: first who is in the room in one sentence, then the two or three clusters or gaps you notice "
       . "(for example many people looking for something few are offering), then the single most promising match-up in the room. "
       . "Under 110 words, plain language, no jargon, no names, no headings or bullet symbols, short paragraphs.\n\n"
@@ -358,6 +818,7 @@ switch ($action) {
       $id = bin2hex(random_bytes(5)); $d['items'][$id] = $q; $d['v']++; return $id;
     }, $emptyQ);
     if ($qid === null) fail('The question list is full.', 409);
+    if ($who = auth_optional($body)) set_flag($who, 'question');
     out(['ok' => true, 'id' => $qid]);
   }
 
@@ -394,7 +855,7 @@ switch ($action) {
   case 'admin': {
     require_admin($body);
     $op = $body['op'] ?? '';
-    if ($op === 'check') out(['ok' => true, 'ai' => ai_on()]);
+    if ($op === 'check') out(['ok' => true, 'ai' => ai_on(), 'google' => client_id('google'), 'microsoft' => client_id('microsoft'), 'redirect' => app_url(), 'version' => APP_VERSION]);
     if ($op === 'setkey') {
       $k = trim((string)($body['api_key'] ?? ''));
       if ($k !== '' && !preg_match('/^sk-ant-[A-Za-z0-9_\-]{20,}$/', $k)) fail('That does not look like a Claude API key. It should start with sk-ant-.');
@@ -402,32 +863,62 @@ switch ($action) {
       @unlink(DATA_DIR . '/insight.json');
       out(['ok' => true, 'ai' => $k !== '']);
     }
+    // Google / Microsoft sign-in: the client IDs are not secrets, they only say which app registration to use.
+    if ($op === 'setsignin') {
+      $g = trim((string)($body['google'] ?? '')); $m = trim((string)($body['microsoft'] ?? ''));
+      if ($g !== '' && !preg_match('/^[0-9]+-[a-z0-9]+\.apps\.googleusercontent\.com$/', $g)) fail('That does not look like a Google client ID. It should end with .apps.googleusercontent.com.');
+      if ($m !== '' && !preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i', $m)) fail('That does not look like a Microsoft application (client) ID.');
+      with_store('settings', function (&$st) use ($g, $m) { $st['google_client_id'] = $g; $st['microsoft_client_id'] = $m; }, []);
+      out(['ok' => true, 'google' => $g, 'microsoft' => $m]);
+    }
     if ($op === 'clear') {
       $n = with_store('people', function (&$d) { $n = count($d['people']); $d = ['v' => $d['v'] + 1, 'people' => []]; return $n; }, $empty);
-      foreach (['icebreakers', 'insight', 'contacts', 'declined', 'visits'] as $f) @unlink(DATA_DIR . "/$f.json");
+      foreach (['icebreakers', 'insight', 'contacts', 'declined', 'visits', 'accounts', 'messages', 'reads', 'notifs', 'push', 'flags', 'oauth'] as $f) @unlink(DATA_DIR . "/$f.json");
       out(['ok' => true, 'deleted' => $n]);
     }
+    // Rollback helper: writes the Version 2 profiles and requests into Version 1's folder, in Version 1's format,
+    // after saving a dated copy of what was there. Only needed if you go back to Version 1 AFTER people joined on Version 2.
+    if ($op === 'rollback_export') {
+      if (!is_dir(V1_DIR) && !@mkdir(V1_DIR, 0755, true)) fail('The Version 1 data folder could not be found or created.', 500);
+      $stamp = date('Ymd-His'); $done = [];
+      $d = read_store('people', $empty);
+      $v1 = ['v' => (int)$d['v'] + 1, 'people' => []];
+      foreach ($d['people'] as $id => $p) {
+        if (empty($p['token_hash'])) continue;
+        $v1['people'][$id] = array_intersect_key($p, array_flip(['name', 'company', 'mobile', 'email', 'linkedin', 'hide_mobile', 'report', 'marketing', 'consent_at', 'consent_v', 'role', 'work', 'sector', 'interests', 'speaker', 'token_hash', 'at', 'created']));
+        $v1['people'][$id]['interests'] = array_values(array_filter($p['interests'] ?? [], fn($i) => $i === 'network' || in_array(explode(':', $i)[0], ['training', 'support', 'practice', 'knowhow', 'solution'], true)));
+      }
+      $sets = ['people' => $v1, 'contacts' => read_store('contacts', []), 'declined' => read_store('declined', []), 'questions' => read_store('questions', $emptyQ), 'polls' => read_store('polls', [])];
+      foreach ($sets as $f => $data) {
+        $path = V1_DIR . "/$f.json";
+        if (is_file($path)) @copy($path, V1_DIR . "/$f.before-rollback-$stamp.json");
+        if (file_put_contents($path, json_encode($data, JSON_UNESCAPED_UNICODE), LOCK_EX) !== false) $done[] = $f;
+      }
+      out(['ok' => true, 'written' => $done, 'profiles' => count($v1['people']), 'backup_suffix' => "before-rollback-$stamp"]);
+    }
     if ($op === 'export' || $op === 'report') {
-      // Event report for Malta Employers. Contact details, and who connected with whom, are only included
-      // for people who ticked the optional report box (both people, for a connection).
+      // Event report for Malta Employers. Contact details, and who matched with whom, are only included
+      // for people who ticked the optional report box (both people, for a match).
       $d = read_store('people', $empty); $c = read_store('contacts', []);
       $P = $d['people']; $ok = fn($id) => !empty($P[$id]['report']);
       $sent = []; $recv = []; $pairs = []; $accepted = 0; $pending = 0;
       foreach ($c as $from => $to) foreach ($to as $t => $r) {
         if (!isset($P[$from], $P[$t])) continue;
-        $sent[$from] = ($sent[$from] ?? 0) + 1; $recv[$t] = ($recv[$t] ?? 0) + 1;
         $back = $c[$t][$from] ?? null;
-        if ($back !== null && strcmp($from, $t) > 0) continue; // count each accepted pair once
+        if ($back === null || (is_array($r) && !empty($r['init']))) { $sent[$from] = ($sent[$from] ?? 0) + 1; $recv[$t] = ($recv[$t] ?? 0) + 1; }
+        if ($back !== null && strcmp((string)$from, (string)$t) > 0) continue; // count each matched pair once
         if ($back !== null) $accepted++; else $pending++;
         if ($ok($from) && $ok($t)) $pairs[] = ['from' => $P[$from]['name'] . ' (' . $P[$from]['company'] . ')', 'to' => $P[$t]['name'] . ' (' . $P[$t]['company'] . ')',
-          'status' => $back !== null ? 'Connected' : 'Request not answered', 'requested' => date('c', req_at($r)),
+          'status' => $back !== null ? 'Matched' : 'Request not answered', 'requested' => date('c', min(req_at($r), $back !== null ? req_at($back) : PHP_INT_MAX)),
           'accepted' => $back !== null ? date('c', max(req_at($r), req_at($back))) : ''];
       }
       $links = [];
       foreach ($c as $from => $to) foreach ($to as $t => $r) if (isset($c[$t][$from], $P[$from], $P[$t])) $links[$from][] = $t;
       $rows = [];
       foreach ($P as $id => $p) {
-        $r = public_person($id, $p); $r['interests'] = interest_words($r['interests']); unset($r['id']);
+        $r = public_person((string)$id, $p); $r['interests'] = interest_words($r['interests']); unset($r['id']);
+        $r['orgtype'] = ORG_TYPES[$r['orgtype']] ?? ''; $r['stage'] = AI_STAGES[$r['stage']][0] ?? '';
+        $r['topics'] = array_values(array_intersect_key(TOPICS, array_flip($r['topics']))); $r['meet'] = array_values(array_intersect_key(MEET, array_flip($r['meet'])));
         $r['joined'] = date('c', (int)($p['created'] ?? $p['at'] ?? 0));
         $r['report'] = $ok($id);
         $r['marketing'] = !empty($p['marketing']); $r['consent_at'] = isset($p['consent_at']) ? date('c', (int)$p['consent_at']) : ''; $r['consent_v'] = $p['consent_v'] ?? '';
@@ -436,15 +927,17 @@ switch ($action) {
         $r['connected_with'] = $ok($id) ? implode('; ', array_map(fn($o) => $P[$o]['name'] . ' (' . $P[$o]['company'] . ')', array_filter($links[$id] ?? [], $ok))) : '';
         // Only people who agreed are listed by name. Marketing-only consent gives name, organisation and email.
         if (!$ok($id) && !empty($p['marketing'])) $r = ['name' => $r['name'], 'company' => $r['company'], 'email' => $r['email'], 'marketing' => true,
-          'report' => false, 'consent_at' => $r['consent_at'], 'consent_v' => $r['consent_v'], 'interests' => [], 'speaker' => false];
+          'report' => false, 'consent_at' => $r['consent_at'], 'consent_v' => $r['consent_v'], 'interests' => [], 'topics' => [], 'meet' => [], 'speaker' => false];
         if ($ok($id) || !empty($p['marketing'])) $rows[] = $r;
       }
       $q = read_store('questions', $emptyQ); $qv = 0; foreach ($q['items'] as $it) $qv += count($it['votes']);
       $pv = 0; $pl = read_store('polls', []); foreach (($pl['votes'] ?? []) as $byDev) $pv += is_array($byDev) ? count($byDev) : 0;
-      $stats = ['App opened (unique phones)' => count(read_store('visits', [])), 'Profiles on the map' => count($P),
+      $msgs = 0; foreach (read_store('messages', []) as $t) $msgs += count($t);
+      $stats = ['App opened (unique phones)' => count(read_store('visits', [])), 'Accounts created' => count(accounts()['byId']), 'Profiles on the map' => count($P),
         'Speakers on the map' => count(array_filter($P, fn($p) => !empty($p['speaker']))), 'Agreed to the event report' => count(array_filter($P, fn($p) => !empty($p['report']))),
         'Agreed to future emails' => count(array_filter($P, fn($p) => !empty($p['marketing']))),
-        'Connection requests sent' => array_sum($sent), 'Connections made (both agreed)' => $accepted, 'Requests not answered' => $pending,
+        'Meet requests sent' => array_sum($sent), 'Matches made (both agreed)' => $accepted, 'Requests not answered' => $pending,
+        'Messages exchanged' => $msgs, 'Phones with notifications on' => count(read_store('push', [])),
         'Questions asked' => count($q['items']), 'Question votes' => $qv, 'Poll votes' => $pv];
       out(['ok' => true, 'people' => $rows, 'connections' => $pairs, 'stats' => $stats, 'at' => date('c')]);
     }

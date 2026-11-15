@@ -13,6 +13,16 @@ const ADMIN_KEY_HASH = '9c021713ee32535b4595481b1df0a37e122dd5235f8b650b4464a10a
 
 // Event title shown on the pages.
 const EVENT_TITLE = 'Making AI work for SMEs';
+const APP_VERSION = '2.0';
+
+// "Sign in with Google" and "Sign in with Microsoft" (optional). The buttons appear once a client ID is set,
+// either here or on screen.html > Organiser > Sign-in options. Client IDs are not secrets. Setup steps: SETUP-SIGNIN.md
+const GOOGLE_CLIENT_ID    = '';
+const MICROSOFT_CLIENT_ID = '';
+
+// Password-reset emails are sent from this address (use a mailbox that exists on your Hostinger account).
+const MAIL_FROM      = 'noreply@tetra.com.mt';
+const MAIL_FROM_NAME = 'SME Constellation';
 
 // ── Advanced (normally leave as is) ─────────────────────────
 const AI_MODEL        = 'claude-haiku-4-5-20251001'; // fast and inexpensive
