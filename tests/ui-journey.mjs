@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
+import { createHash } from 'node:crypto';
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
 
@@ -16,7 +17,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const shots = process.argv[2] || path.join(tmpdir(), 'smec-shots'); mkdirSync(shots, { recursive: true });
 const data = mkdtempSync(path.join(tmpdir(), 'smec-ui-'));
 const port = 8200 + Math.floor(Math.random() * 500), base = `http://127.0.0.1:${port}/`;
-const php = spawn('php', ['-S', `127.0.0.1:${port}`, '-t', root], { env: { ...process.env, SMEWEEK_DATA_DIR: data, SMEWEEK_MAIL_LOG: '1' }, stdio: 'ignore' });
+const php = spawn('php', ['-S', `127.0.0.1:${port}`, '-t', root], { env: { ...process.env, SMEWEEK_DATA_DIR: data, SMEWEEK_MAIL_LOG: '1', SMEWEEK_ADMIN_HASH: createHash('sha256').update('test-organiser').digest('hex') }, stdio: 'ignore' });
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 let pass = 0, fail = 0; const errors = [];
 const ok = (c, name) => { c ? pass++ : fail++; console.log((c ? 'PASS ' : 'FAIL ') + name); };
@@ -165,10 +166,18 @@ try {
   await page.waitForSelector('#qlist .q'); await shot('25-live');
   ok(await page.locator('#qlist .q').count() === 1, 'a question from the floor is sent and listed');
 
+  // ---- live poll ----
+  await api('padmin', { key: 'test-organiser', op: 'open', pid: 'journey' });
+  await page.waitForSelector('#pollBox .opt-card', { timeout: 15000 });
+  await page.locator('#pollBox .opt-card').nth(1).click(); await page.locator('#pollBox').getByRole('button', { name: 'Vote' }).click();
+  await page.waitForSelector('#pollBox .pbar'); await page.evaluate(() => scrollTo(0, 0)); await shot('25b-poll');
+  ok(/1 vote/.test(await page.locator('#pollBox').textContent()), 'a live poll opens on the phone, takes a vote and shows results');
+  await api('padmin', { key: 'test-organiser', op: 'close' });
+
   // ---- me ----
   await tap('.dock [data-tab=me]'); await page.waitForSelector('.mlist'); await sleep(900); await shot('26-me');
   const done = await page.locator('.mrow.done').count();
-  ok(done >= 9, 'missions are ticked off as you go (' + done + ' done)');
+  ok(done >= 10 && await page.locator('.mrow.done', { hasText: 'Vote in a live poll' }).count() === 1, 'missions are ticked off as you go (' + done + ' done)');
   ok(await page.locator('#board .lb').count() >= 1, 'leaderboard shows');
   await page.evaluate(() => scrollTo(0, document.body.scrollHeight)); await shot('27-me-settings');
 
