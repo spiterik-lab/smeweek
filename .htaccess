@@ -12,8 +12,8 @@ Options -Indexes
   # The app lives at https://smeweek.tetra.com.mt/ - the old address tetra.com.mt/smeweek/ redirects there.
   RewriteCond %{HTTP_HOST} ^(www\.)?tetra\.com\.mt$ [NC]
   RewriteRule ^(.*)$ https://smeweek.tetra.com.mt/$1 [R=301,L]
-  # Server-side code library: never served
-  RewriteRule ^lib/ - [F,L]
+  # Server-side code library and the automatic checks: never served
+  RewriteRule ^(lib|tests)/ - [F,L]
 </IfModule>
 
 # The service worker and the page itself must always be fresh so updates reach phones straight away.
