@@ -34,7 +34,7 @@ require __DIR__ . '/lib/crypto.php';
 
 define('SECTOR_NAMES', array_column(SECTORS, 0));
 define('INTEREST_IDS', array_merge(
-  array_map(fn($k) => "$k:give", array_keys(INTERESTS)),
+  array_map(fn($k) => "$k:give", array_keys(array_filter(INTERESTS, fn($i) => $i[0] !== ''))),
   array_map(fn($k) => "$k:get", array_keys(INTERESTS)),
   ['network']
 ));
@@ -158,7 +158,7 @@ function good_password(mixed $v): string {
 
 /** What everyone in the room may see. Sign-in email and contact details are never included. */
 function public_person(string $id, array $p): array {
-  return ['id' => $id, 'name' => $p['name'], 'company' => $p['company'], 'role' => $p['role'] ?? '', 'sector' => $p['sector'] ?? 'Other',
+  return ['id' => $id, 'name' => $p['name'], 'company' => $p['company'], 'role' => $p['role'] ?? '', 'sector' => $p['sector'] ?? 'Other', 'sector_other' => $p['sector_other'] ?? '',
           'interests' => $p['interests'] ?? [], 'speaker' => !empty($p['speaker']), 'work' => $p['work'] ?? '',
           'orgtype' => $p['orgtype'] ?? '', 'stage' => $p['stage'] ?? '', 'topics' => $p['topics'] ?? [], 'meet' => $p['meet'] ?? []];
 }
@@ -264,7 +264,7 @@ function strength(?array $p): int {
   if (!$p) return 0;
   $s = 40;
   if (($p['role'] ?? '') !== '') $s += 5;
-  if (($p['sector'] ?? 'Other') !== 'Other') $s += 10;
+  if (($p['sector'] ?? 'Other') !== 'Other' || ($p['sector_other'] ?? '') !== '') $s += 10;
   if (($p['orgtype'] ?? '') !== '') $s += 10;
   if (($p['stage'] ?? '') !== '') $s += 10;
   if (!empty($p['topics'])) $s += 8;
@@ -279,7 +279,7 @@ function game_state(string $id, array $P, array $C, array $F, array $PUSH): arra
   $matches = array_values(array_filter(array_keys($mine), fn($o) => isset($C[$o][$id], $P[$o])));
   $done = [
     'intro' => isset($f['intro']), 'basics' => (bool)$p,
-    'org' => $p && ($p['sector'] ?? 'Other') !== 'Other' && ($p['orgtype'] ?? '') !== '' && ($p['stage'] ?? '') !== '',
+    'org' => $p && (($p['sector'] ?? 'Other') !== 'Other' || ($p['sector_other'] ?? '') !== '') && ($p['orgtype'] ?? '') !== '' && ($p['stage'] ?? '') !== '',
     'focus' => $p && !empty($p['topics']) && !empty($p['meet']),
     'card' => $p && (($p['mobile'] ?? '') !== '' || ($p['email'] ?? '') !== '' || ($p['linkedin'] ?? '') !== ''),
     'work' => $p && ($p['work'] ?? '') !== '',
@@ -353,7 +353,7 @@ switch ($action) {
   // ---------- event content (questions, sectors, agenda, missions) ----------
   case 'config': {
     $interests = [];
-    foreach (INTERESTS as $k => [$give, $get, $noun]) $interests[] = ['key' => $k, 'give' => $give, 'get' => $get, 'noun' => $noun];
+    foreach (INTERESTS as $k => [$give, $get, $noun]) $interests[] = ['key' => $k, 'give' => $give, 'get' => $get, 'noun' => $noun, 'getOnly' => $give === ''];
     $agenda = array_map(fn($a) => ['time' => $a[0], 'mins' => $a[1], 'title' => $a[2], 'who' => $a[3], 'qa' => $a[4], 'people' => $a[5] ?? []], AGENDA);
     $qa = []; foreach (QA_SESSIONS as $k => $label) $qa[] = ['key' => $k, 'label' => $label];
     $kv = fn(array $a) => array_map(fn($k, $v) => ['key' => $k, 'label' => is_array($v) ? $v[0] : $v, 'short' => is_array($v) ? ($v[1] ?? $v[0]) : $v], array_keys($a), $a);
@@ -547,6 +547,7 @@ switch ($action) {
       'interests' => pick($body['interests'] ?? [], INTEREST_IDS),
       'speaker' => !empty($body['speaker']),
     ];
+    $p['sector_other'] = $p['sector'] === 'Other' ? clean($body['sector_other'] ?? '', 40) : '';
     if ($p['name'] === '' || $p['company'] === '') fail('Add your name and organisation.');
     if ($p['mobile'] !== '' && strlen(preg_replace('/\D/', '', $p['mobile'])) < 8) fail('That mobile number looks too short.');
     if (!$p['interests']) fail('Pick at least one thing you can offer or are looking for.');
@@ -917,6 +918,7 @@ switch ($action) {
       $rows = [];
       foreach ($P as $id => $p) {
         $r = public_person((string)$id, $p); $r['interests'] = interest_words($r['interests']); unset($r['id']);
+        if ($r['sector'] === 'Other' && $r['sector_other'] !== '') $r['sector'] = 'Other: ' . $r['sector_other']; unset($r['sector_other']);
         $r['orgtype'] = ORG_TYPES[$r['orgtype']] ?? ''; $r['stage'] = AI_STAGES[$r['stage']][0] ?? '';
         $r['topics'] = array_values(array_intersect_key(TOPICS, array_flip($r['topics']))); $r['meet'] = array_values(array_intersect_key(MEET, array_flip($r['meet'])));
         $r['joined'] = date('c', (int)($p['created'] ?? $p['at'] ?? 0));

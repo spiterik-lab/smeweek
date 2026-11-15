@@ -199,7 +199,7 @@ function wizard(o = {}) {
   const C = S.cfg, p = o.profile || {}, edit = !!o.profile;
   const W = {name: p.name || o.name || "", role: p.role || "", company: p.company || "", speaker: !!p.speaker || (!edit && /[?&](speaker|role=speaker)\b/.test(location.search)),
     sector: p.sector && p.sector !== "Other" ? p.sector : (p.sector || ""), orgtype: p.orgtype || "", stage: p.stage || "",
-    interests: new Set(p.interests || []), topics: new Set(p.topics || []), meet: new Set(p.meet || []), work: p.work || "",
+    sector_other: p.sector_other || "", interests: new Set(p.interests || []), topics: new Set(p.topics || []), meet: new Set(p.meet || []), work: p.work || "",
     mobile: p.mobile || "", email: p.email || (edit ? "" : (S.account && S.account.email) || ""), linkedin: p.linkedin || "", hide_mobile: !!p.hide_mobile,
     consent: edit, report: !!p.report, marketing: !!p.marketing, board: !("board" in p) || !!p.board};
   const showSpeaker = W.speaker;
@@ -215,15 +215,16 @@ function wizard(o = {}) {
       field("Role", text("role", {autocomplete: "organization-title", maxlength: "80", placeholder: "e.g. Managing Director"}), "optional"),
       showSpeaker ? check("speaker", "I'm a speaker or panellist at the forum") : null],
     () => [head("Step 2 of 5 · +30 XP", "Tell us about your <em>organisation.</em>", "Three quick taps. They let us match you with the right kind of people, not just the right topics."),
-      field("Sector", h("select", {onchange: e => { W.sector = e.target.value; }},
+      field("Sector", h("select", {onchange: e => { W.sector = e.target.value; const o = document.getElementById("secOther"); o.hidden = W.sector !== "Other"; if (!o.hidden) o.querySelector("input").focus(); }},
         h("option", {value: ""}, "Choose your sector"), C.sectors.map(([s]) => h("option", {value: s, selected: W.sector === s}, s)))),
+      h("div", {id: "secOther", hidden: W.sector !== "Other"}, field("Your sector", text("sector_other", {maxlength: "40", placeholder: "e.g. Aviation"}))),
       h("div", "group", h("h3", null, "What kind of organisation?"),
         h("div", "chips", C.orgTypes.map(t => { const b = chip(t.label, W.orgtype === t.key, v => { W.orgtype = v ? t.key : ""; for (const x of b.parentNode.children) x.setAttribute("aria-pressed", "false"); return v; }); return b; }))),
       h("div", "group", h("h3", null, "Where are you with AI today?"),
         h("div", "stack tight", C.stages.map(t => { const b = h("button", {class: "opt-card", type: "button", "aria-pressed": String(W.stage === t.key)}, h("span", "dot"), t.label);
           b.onclick = () => { W.stage = W.stage === t.key ? "" : t.key; for (const x of b.parentNode.children) x.setAttribute("aria-pressed", "false"); b.setAttribute("aria-pressed", String(W.stage === t.key)); }; return b; })))],
     () => [head("Step 3 of 5 · the heart of it", "What can you <em>offer,</em> and what do you <em>need?</em>", "We match what you offer with what others need, and the other way round. Pick at least one."),
-      h("div", "group", h("h3", null, "I can offer"), h("div", "chips", C.interests.map(t => chip(t.give, W.interests.has(t.key + ":give"), setOf(W.interests, t.key + ":give"))))),
+      h("div", "group", h("h3", null, "I can offer"), h("div", "chips", C.interests.filter(t => !t.getOnly).map(t => chip(t.give, W.interests.has(t.key + ":give"), setOf(W.interests, t.key + ":give"))))),
       h("div", "group", h("h3", null, "I'm looking for"), h("div", "chips", C.interests.map(t => chip(t.get, W.interests.has(t.key + ":get"), setOf(W.interests, t.key + ":get"), "cyan")))),
       h("div", "group", h("h3", null, "And"), h("div", "chips", chip(C.networking, W.interests.has("network"), setOf(W.interests, "network"))))],
     () => [head("Step 4 of 5 · +30 XP", "Sharpen your <em>matches.</em>", "Optional, but this is what turns a good match into the right one."),

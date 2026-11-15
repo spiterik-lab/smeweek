@@ -18,6 +18,10 @@ const INTERESTS = [
   'rules'    => ['Guidance on AI rules and data protection',       'Guidance on AI rules and data protection',        'guidance on AI rules'],
   'pilot'    => ['Open to partner on an AI pilot or project',      'A partner for an AI pilot or project',            'AI pilots and partnerships'],
   'talent'   => ['AI skills, talent or placements',                'People with AI and digital skills',               'AI skills and talent'],
+  // "Looking for" only (give label left empty). Their matching rules are in assets/match.js.
+  'collab'   => ['',                                               'Collaborators',                                   'collaborators'],
+  'clients'  => ['',                                               'Clients',                                         'clients'],
+  'contacts' => ['',                                               'Contacts',                                        'new contacts'],
 ];
 // A single option that matches anyone else who ticks it too.
 const NETWORKING_LABEL = 'Networking with others in the room';
@@ -42,8 +46,7 @@ const SECTORS = [
   ['Tech, software & IT',                    '#2ec4b6'],
   ['Gaming & digital',                       '#9b7be0'],
   ['Health & care',                          '#f29ac9'],
-  ['Education & training',                   '#d9c19a'],
-  ['Research & innovation',                  '#b79cf0'],
+  ['Education, training & research',         '#d9c19a'],
   ['Government & regulators',                '#e0336f'],
   ['Business support & funding agencies',    '#ff8a5c'],
   ['Employer bodies, unions & associations', '#5b8def'],
@@ -56,6 +59,8 @@ const SECTOR_ALIASES = [
   'Shipping, logistics & maritime'  => 'Maritime, shipping & logistics',
   'Public body or support agency'   => 'Government & regulators',
   'Union or employer association'   => 'Employer bodies, unions & associations',
+  'Education & training'            => 'Education, training & research',
+  'Research & innovation'           => 'Education, training & research',
 ];
 
 // Kind of organisation. key => label. (Keys are used by the matching rules in assets/match.js.)
@@ -67,7 +72,6 @@ const ORG_TYPES = [
   'solo'    => 'Self-employed or consultant',
   'public'  => 'Government, regulator or public body',
   'agency'  => 'Business support or funding agency',
-  'edu'     => 'Education, training or research',
   'assoc'   => 'Association, chamber or union',
 ];
 

@@ -9,6 +9,9 @@
      1.5  I'm early with AI, they're further on and willing to share (1.0 the other way round, 0.5 same stage)
      1.0  we're both here to network
      0.5  we're looking for the same thing (compare notes)   0.4 same sector
+     2.0  I'm looking for collaborators and they are too, or they are open to partner on an AI project
+     1.0  I'm looking for clients and they need something I offer
+     1.0  I'm looking for contacts and so are they (or they are here to network)
      0.5  they're a speaker (only if something else already matched)
    Ranking uses my score plus half of theirs, so matches that work for both people come first. */
 (function (g) {
@@ -18,6 +21,9 @@ const EARLY = {"new":1, explore:1}, AHEAD = {use:1, core:1, guide:1};
 const list = a => a.length < 2 ? a.join("") : a.slice(0, -1).join(", ") + " and " + a[a.length - 1];
 const low = s => s.charAt(0).toLowerCase() + s.slice(1);
 
+/** A person's sector for comparing: the listed one, or the one they typed under "Other". */
+const sec = p => p.sector && p.sector !== "Other" ? p.sector : (p.sector_other ? "other:" + p.sector_other.trim().toLowerCase() : "");
+const secName = p => p.sector && p.sector !== "Other" ? p.sector : (p.sector_other || "");
 /** Is b the kind of person a asked to meet (one of the MEET keys in event.php)? */
 function fits(key, a, b) {
   const gives = k => (b.interests || []).includes(k + ":give");
@@ -27,8 +33,8 @@ function fits(key, a, b) {
     case "funders":    return b.orgtype === "agency" || gives("support");
     case "regulators": return b.orgtype === "public" || b.sector === "Government & regulators";
     case "providers":  return gives("solution") || b.sector === "Tech, software & IT";
-    case "trainers":   return gives("training") || b.orgtype === "edu" || b.sector === "Education & training";
-    case "peers":      return !!a.sector && a.sector !== "Other" && a.sector === b.sector;
+    case "trainers":   return gives("training") || b.sector === "Education, training & research";
+    case "peers":      return !!sec(a) && sec(a) === sec(b);
     case "speakers":   return !!b.speaker;
   }
   return false;
@@ -47,10 +53,18 @@ function score(a, b, cfg) {
   const add = (w, text, kind) => { s += w; R.push({w, text, kind}); };
   const bothGet = [];
   for (const it of cfg.interests) {
+    if (it.getOnly) continue;
     if (A.has(it.key + ":get") && B.has(it.key + ":give")) add(3.5, `Offers ${it.noun}, which you're looking for`, "get");
     if (A.has(it.key + ":give") && B.has(it.key + ":get")) add(3, `Looking for ${it.noun}, which you offer`, "give");
     if (A.has(it.key + ":get") && B.has(it.key + ":get")) bothGet.push(it.noun);
   }
+  // The three "looking for" only choices: collaborators, clients, contacts.
+  if (A.has("collab:get")) {
+    if (B.has("pilot:give")) add(2, "Open to partnering on an AI project, and you're looking for collaborators", "get");
+    else if (B.has("collab:get")) add(2, "Also looking for collaborators", "meet");
+  }
+  if (A.has("clients:get") && R.some(r => r.kind === "give")) add(1, "Could be a client: they need what you offer", "give");
+  if (A.has("contacts:get") && (B.has("contacts:get") || B.has("network")) && !(A.has("network") && B.has("network"))) add(1, "Here to make new contacts, like you", "net");
   let first = true;
   for (const k of a.meet || []) if (fits(k, a, b)) { add(first ? 2 : .5, MEET_WHY[k] || "Someone you wanted to meet", "meet"); first = false; }
   if ((b.meet || []).some(k => fits(k, b, a))) add(1, "You're the kind of person they want to meet", "meet");
@@ -65,7 +79,7 @@ function score(a, b, cfg) {
   }
   if (A.has("network") && B.has("network")) add(1, "Here to network, like you", "net");
   if (bothGet.length) add(.5, `Also looking for ${list(bothGet.slice(0, 2))}, so you can compare notes`, "peer");
-  if (a.sector && a.sector !== "Other" && a.sector === b.sector && !(a.meet || []).includes("peers")) add(.4, `Also in ${low(a.sector)}`, "peer");
+  if (sec(a) && sec(a) === sec(b) && !(a.meet || []).includes("peers")) add(.4, `Also in ${low(secName(a))}`, "peer");
   if (s > 0 && b.speaker) s += .5;
   R.sort((x, y) => y.w - x.w);
   return {s, reasons: R, why: R.map(r => r.text)};
@@ -83,5 +97,5 @@ function rank(me, people, cfg) {
   }
   return out.sort((x, y) => y.total - x.total || x.p.name.localeCompare(y.p.name));
 }
-g.SMEMatch = {score, fit, rank, fits, list};
+g.SMEMatch = {score, fit, rank, fits, list, secName};
 })(typeof window !== "undefined" ? window : globalThis);

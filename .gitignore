@@ -1,3 +1,4 @@
 smeweek-data/
 data/
 *.json
+!assets/brief.json

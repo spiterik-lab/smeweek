@@ -21,7 +21,7 @@ const EX = [
   ["Nathan", "Grid & Ledger Advisory", "Partner", "Accountancy, audit & tax", ["knowhow:give", "rules:give", "network"], "small", "use", ["finance", "rules"]],
   ["Elena", "Cloudbay Systems", "Solutions Architect", "Tech, software & IT", ["solution:give", "training:give", "pilot:give"], "small", "guide", ["software", "data"]],
   ["Joseph", "Skills Forward Agency", "Programme Lead", "Business support & funding agencies", ["support:give", "training:give"], "agency", "guide", ["strategy"], true],
-  ["Anna", "Northshore Academy", "Director", "Education & training", ["training:give", "talent:give", "knowhow:get"], "edu", "use", ["hr", "strategy"]],
+  ["Anna", "Northshore Academy", "Director", "Education, training & research", ["training:give", "talent:give", "knowhow:get"], "small", "use", ["hr", "strategy"]],
   ["Kurt", "Valley Print Works", "Managing Director", "Manufacturing", ["support:get", "solution:get"], "small", "explore", ["making", "marketing"]],
   ["Paul", "Bright Ledger Accountants", "Director", "Accountancy, audit & tax", ["training:get", "knowhow:get", "rules:get"], "small", "explore", ["finance", "admin"]],
   ["Julia", "Greenroof Energy", "Co-founder", "Energy, water & environment", ["support:get", "pilot:get", "network"], "micro", "explore", ["data", "ops"]],
@@ -77,6 +77,7 @@ function words(p, side) {
   return out;
 }
 const av = (p, size) => h("div", {class: "avatar" + (p.speaker ? " spk" : ""), style: {"--c": S.color[p.sector] || "#b0acd0", "--s": (size || 48) + "px"}, "aria-hidden": "true"}, initials(p.name));
+const sname = p => M.secName(p) || "";
 const sub = p => [p.role, p.company].filter(Boolean).join(" · ");
 function flags(p) { return [p.speaker ? h("span", "tag flag spk", "Speaker") : null, p.example ? h("span", "tag flag", "Example") : null]; }
 function prow(p, right, onclick, line) {
@@ -370,7 +371,7 @@ function peopleUpdate() {
   if (!sky || !$("plist")) return;
   sky.set(S.all, S.me.id, skyLinks(S.all));
   const n = S.people.length;
-  $("roomCount").textContent = n === 1 ? "You're the first one here" : `${n} people, ${new Set(S.people.map(p => p.sector)).size} sectors`;
+  $("roomCount").textContent = n === 1 ? "You're the first one here" : `${n} people, ${new Set(S.people.map(p => sname(p) || "Other")).size} sectors`;
   peopleList();
 }
 function peopleList() {
@@ -379,11 +380,11 @@ function peopleList() {
   const mine = new Set(me.interests || []);
   const has = (p, side, other) => (p.interests || []).some(i => i.endsWith(":" + side) && mine.has(i.split(":")[0] + ":" + other));
   let list = S.all.filter(p => p.id !== S.me.id);
-  if (q) list = list.filter(p => (p.name + " " + p.company + " " + p.role + " " + p.sector).toLowerCase().includes(q));
+  if (q) list = list.filter(p => (p.name + " " + p.company + " " + p.role + " " + p.sector + " " + (p.sector_other || "")).toLowerCase().includes(q));
   if (f === "offers") list = list.filter(p => has(p, "give", "get"));
   if (f === "wants") list = list.filter(p => has(p, "get", "give"));
   if (f === "asked") list = list.filter(p => (me.meet || []).some(k => M.fits(k, me, p)));
-  if (f === "sector") list = list.filter(p => p.sector === me.sector);
+  if (f === "sector") list = list.filter(p => M.fits("peers", me, p));
   if (f === "speakers") list = list.filter(p => p.speaker);
   list.sort((a, b) => ((S.rankOf.get(b.id) || {}).total || 0) - ((S.rankOf.get(a.id) || {}).total || 0) || a.name.localeCompare(b.name));
   const state = {match: "Matched", sent: "Sent", incoming: "Wants to meet"};
@@ -399,7 +400,7 @@ function openPerson(id) {
   if (rel(id) === "match") return openMatch(id);
   sheet((box, ctl) => {
     const r = S.rankOf.get(id), state = rel(id), inc = S.sync.incoming.find(x => x.id === id);
-    const meta = [p.sector !== "Other" ? p.sector : "", label(S.cfg.orgTypes, p.orgtype), label(S.cfg.stages, p.stage, true)].filter(Boolean);
+    const meta = [sname(p), label(S.cfg.orgTypes, p.orgtype), label(S.cfg.stages, p.stage, true)].filter(Boolean);
     box.append(h("div", "phead", av(p, 72), h("div", "grow", h("h2", "h1", p.name), h("p", "dim", sub(p)), h("div", {class: "tags", style: {"margin-top": "8px"}}, flags(p)))),
       h("div", "tags", meta.map(t => h("span", "tag", t))));
     if (p.example) box.append(h("p", "note", "This is an example person, shown so you can see how matching works. They can't be contacted."));
@@ -669,7 +670,7 @@ function me() {
   const lb = h("div", {id: "board"}, h("p", "small dim", "Loading…"));
   view.replaceChildren(
     h("div", "card lift me-card", av(p, 84), h("div", null, h("h1", "h1", p.name), h("p", "dim", sub(p))),
-      h("div", "tags", [p.sector !== "Other" ? p.sector : "", label(S.cfg.orgTypes, p.orgtype), label(S.cfg.stages, p.stage, true)].filter(Boolean).map(t => h("span", "tag", t))),
+      h("div", "tags", [sname(p), label(S.cfg.orgTypes, p.orgtype), label(S.cfg.stages, p.stage, true)].filter(Boolean).map(t => h("span", "tag", t))),
       h("button", {class: "btn small", type: "button", onclick: () => editProfile(0)}, I("edit"), "Edit profile")),
     h("div", "card level", h("div", "top", h("div", {class: "ring", style: {"--p": pct, "--c": "var(--gold)", "--s": "62px"}}, I("star")),
         h("div", "grow", h("p", "eyebrow", "Level " + (g.level + 1) + " of " + S.cfg.levels.length), h("p", "lv", g.levelName)), h("b", {style: {color: "var(--gold)", font: "500 14px var(--mono)"}}, g.xp + " XP")),

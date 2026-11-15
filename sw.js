@@ -1,9 +1,9 @@
 /* SME Constellation 2.0 service worker: makes the app installable, shows push notifications,
    and keeps the app's own files on the phone so it opens quickly on conference Wi-Fi.
    Nothing from api.php is ever stored here. */
-const CACHE = "smec-v2-1";
+const CACHE = "smec-v2-2";
 const SHELL = ["./", "assets/v2/app.css", "assets/v2/core.js", "assets/v2/flow.js", "assets/v2/app.js", "assets/match.js",
-  "assets/img/brand-logos.png", "assets/img/swash.webp", "assets/img/icon-192.png", "assets/img/mark.svg", "assets/img/valletta-a.webp", "assets/img/valletta-b.webp"];
+  "assets/img/brand-logos.png", "assets/img/swash.webp", "assets/img/icon-192.png", "assets/img/mark.svg", "assets/img/valletta-a.webp", "assets/img/valletta-b.webp", "assets/brief.json"];
 
 self.addEventListener("install", e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).catch(() => {}).then(() => self.skipWaiting())); });
 self.addEventListener("activate", e => {

@@ -17,7 +17,7 @@ const EX_ROWS = [
  ["Nathan","Grid & Ledger Advisory","Partner","HR, recruitment & consulting",["knowhow:give","network"]],
  ["Elena","Cloudbay Systems","Solutions Architect","Tech, software & IT",["solution:give","training:give"]],
  ["Joseph","Skills Forward Agency","Programme Lead","Business support & funding agencies",["support:give","training:give"],true],
- ["Anna","Northshore Academy","Director","Education & training",["training:give","knowhow:get"]],
+ ["Anna","Northshore Academy","Director","Education, training & research",["training:give","knowhow:get"]],
  ["Kurt","Valley Print Works","Managing Director","Retail & trade",["support:get","solution:get"]],
  ["Isabel","Tidewater Yachting","Commercial Manager","Maritime, shipping & logistics",["practice:get","network"]],
  ["Paul","Bright Ledger Accountants","Director","HR, recruitment & consulting",["training:get","knowhow:get"]],

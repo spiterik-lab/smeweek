@@ -35,13 +35,19 @@ async function seed(name, company, role, sector, interests, extra = {}) {
 try {
   for (let i = 0; i < 40; i++) { try { await fetch(base + 'api.php?action=config'); break; } catch { await sleep(150); } }
   const funder = await seed('Rachel Borg', 'Malta Growth Agency', 'Funding Manager', 'Business support & funding agencies', ['support:give', 'knowhow:give', 'network'], { orgtype: 'agency', stage: 'guide', speaker: true });
-  const trainer = await seed('Mark Vella', 'Northshore Academy', 'Director', 'Education & training', ['training:give', 'talent:give'], { orgtype: 'edu', stage: 'use', topics: ['hr'] });
+  const trainer = await seed('Mark Vella', 'Northshore Academy', 'Director', 'Education, training & research', ['training:give', 'talent:give'], { orgtype: 'small', stage: 'use', topics: ['hr'] });
   const tech = await seed('Elena Grech', 'Cloudbay Systems', 'Solutions Architect', 'Tech, software & IT', ['solution:give', 'pilot:give', 'practice:give'], { orgtype: 'small', stage: 'core', topics: ['finance', 'admin'] });
   const peer = await seed('Paul Zammit', 'Bright Ledger', 'Partner', 'Accountancy, audit & tax', ['training:get', 'solution:get', 'network'], { orgtype: 'small', stage: 'explore', topics: ['finance'], meet: ['peers'] });
   await seed('Sarah Attard', 'Corner Deli Group', 'Owner', 'Retail & trade', ['knowhow:get', 'practice:get'], { orgtype: 'micro', stage: 'new' });
   await seed('Daniel Farrugia', 'Salina Fintech', 'CTO', 'Financial services & banking', ['practice:give', 'knowhow:give'], { orgtype: 'medium', stage: 'core', topics: ['finance', 'data'] });
   await seed('Claire Micallef', 'Data Rules Office', 'Senior Officer', 'Government & regulators', ['rules:give'], { orgtype: 'public', stage: 'guide' });
 
+  await seed('Ian Pace', 'Skyline Aero', 'Founder', 'Other', ['collab:get', 'clients:get', 'contacts:get', 'collab:give'], { sector_other: 'Aviation', orgtype: 'edu' });
+  const ian = (await api('list')).people.find(p => p.name === 'Ian Pace');
+  ok(ian.sector === 'Other' && ian.sector_other === 'Aviation', 'a sector typed under "Other" is saved');
+  ok(ian.interests.join() === 'collab:get,clients:get,contacts:get' && ian.orgtype === '', 'Collaborators, Clients and Contacts are "looking for" only; the old education organisation type is gone');
+  const cfg = await api('config');
+  ok(cfg.sectors.some(x => x[0] === 'Education, training & research') && !cfg.sectors.some(x => x[0] === 'Research & innovation'), 'one Education, training & research sector');
   const browser = await chromium.launch();
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, userAgent: 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Mobile Safari/537.36' });
   const page = await ctx.newPage();
@@ -78,11 +84,14 @@ try {
   const inputs = page.locator('#wizard .wz-step input[type=text]');
   await inputs.nth(0).fill('Kevin Spiteri'); await inputs.nth(1).fill('Harbour Books Ltd'); await inputs.nth(2).fill('Managing Director');
   await shot('08-profile-1-basics'); await btn('Continue').click();
-  await page.selectOption('#wizard select', 'Accountancy, audit & tax'); await btn('Small business (10 to 49)').click(); await btn('Exploring and experimenting').click();
+  await page.selectOption('#wizard select', 'Other');
+  ok(await page.locator('#secOther input').isVisible(), 'choosing Other shows a box to type your own sector');
+  await page.selectOption('#wizard select', 'Accountancy, audit & tax');
+  ok(!(await page.locator('#secOther').isVisible()), 'the box hides again for a listed sector'); await btn('Small business (10 to 49)').click(); await btn('Exploring and experimenting').click();
   await shot('09-profile-2-organisation'); await btn('Continue').click();
   await btn('Continue').click();
   ok(/at least one/.test(await page.locator('#wizard .note.warn').textContent()), 'step 3 needs at least one offer or need');
-  for (const n of ['Our own experience of using AI', 'AI training for my team', 'An AI product or service for my business', 'Networking with others in the room']) await btn(n).click();
+  for (const n of ['Our own experience of using AI', 'AI training for my team', 'An AI product or service for my business', 'Collaborators', 'Clients', 'Contacts', 'Networking with others in the room']) await btn(n).click();
   await page.locator('#wizard .chip', { hasText: 'Funding, grants or schemes for AI' }).nth(1).click();
   await shot('10-profile-3-offer-need'); await btn('Continue').click();
   for (const n of ['Finance and accounting', 'Admin and paperwork', 'Funders and support agencies', 'AI and tech providers', 'People in my sector']) await btn(n).click();
@@ -146,9 +155,9 @@ try {
 
   // ---- people ----
   await tap('.dock [data-tab=people]'); await page.waitForSelector('#plist .prow'); await sleep(1500); await shot('21-people-map');
-  ok(await page.locator('#plist .prow').count() === 7, 'people tab lists everyone else in the room');
+  ok(await page.locator('#plist .prow').count() === 8, 'people tab lists everyone else in the room');
   await btn('Offers what I need').click(); await sleep(300);
-  ok(await page.locator('#plist .prow').count() < 7, 'filters narrow the list');
+  ok(await page.locator('#plist .prow').count() < 8, 'filters narrow the list');
   await page.locator('#plist .prow').last().click(); await page.waitForSelector('.sheet .phead'); await shot('22-person');
   await page.locator('.sheet .close').click(); await page.waitForSelector('.sheet', { state: 'detached' });
 
