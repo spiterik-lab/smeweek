@@ -602,7 +602,7 @@ async function loadQuestions() {
   S.questions = j.items; if (S.tab === "live") questionList();
 }
 function live() {
-  S.qaSession = S.qaSession || (currentItem() || {}).qa || "gen";
+  S.qaSession = S.qaSession || (currentItem() || {}).qa || S.cfg.qa[0].key;
   const ta = h("textarea", {maxlength: "280", rows: "3", placeholder: "What would you like to ask?", "aria-label": "Your question"});
   const named = h("input", {type: "checkbox", checked: true}), note = h("p", {class: "note", role: "alert"});
   const b = h("button", {class: "btn primary block", type: "button"}, "Send my question");

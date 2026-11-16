@@ -124,8 +124,8 @@ const AGENDA = [
   ['08:50',  8, 'Welcome speech', 'Ivan Refalo, President of Malta Employers', '', []],
   ['08:58',  8, 'Address', 'Hon. Silvio Schembri, Minister for the Economy, Technology and Strategic Projects', '', []],
   ['09:06',  9, 'Address', 'Hon. Darren Carabott, Shadow Minister for the Economy, Technology and Strategic Projects', '', []],
-  ['09:15', 15, 'Keynote speech', 'Kenneth Brincat, CEO, MDIA', 'gen', []],
-  ['09:30', 10, 'Survey presentation', 'Kevin J. Borg, Director General, Malta Employers', 'gen', []],
+  ['09:15', 15, 'Keynote speech', 'Kenneth Brincat, CEO, MDIA', '', []],
+  ['09:30', 10, 'Survey presentation', 'Kevin J. Borg, Director General, Malta Employers', '', []],
   ['09:40', 35, 'Panel discussion 1: Preparing for new skills in a post-AI era', 'Moderated by Kevin Spiteri', 'p1', [
     'Ruth DeBrincat, Senior Director, Policy and Technical Affairs, National Skills Council',
     'Edwin Balzan, Digital Innovations Manager, APS Bank plc',
@@ -135,20 +135,20 @@ const AGENDA = [
     'Martha Muscat, Head of Research and Innovation, Computime FinTech',
     "Jonathan Gerada, Malta’s Chief Artificial Intelligence Officer",
   ]],
-  ['10:15', 20, 'Best practices in business and private sector: part 1', 'Moderated by Prof. Alexiei Dingli', 'bp', [
+  ['10:15', 20, 'Best practices in business and private sector: part 1', 'Moderated by Prof. Alexiei Dingli', '', [
     'Donna Cauchi, Operations Manager, Niumee Limited, part of St James Hospital Group subsidiary companies',
     'Eric Aquilina, Senior DevOps Engineer, APS Bank plc',
     'James Attard Kingswell, CEO/Director, Kingswell Innovation',
     'Matthew Ellul Sullivan, CEO, Sullivan Shipping Agencies Limited',
   ]],
   ['10:35', 30, 'Coffee break', '', '', []],
-  ['11:05', 20, 'Best practices in business and private sector: part 2', 'Moderated by Prof. Alexiei Dingli', 'bp', [
+  ['11:05', 20, 'Best practices in business and private sector: part 2', 'Moderated by Prof. Alexiei Dingli', '', [
     'Dr Vince Vella, CTO/COO, Computime Business Software & FinTech',
     'Jonathan Dalli, CEO, Concept Stadium',
     'Andrew Schembri, Chair of the Digitalisation Working Group within the Malta Institute of Accountants, and Partner, PwC Malta',
   ]],
-  ['11:25', 10, 'Agentic Leaders. Human Futures. Navigating the risks, responsibilities and realities of AI in the workplace', 'Joanne Bondin, Director, misco Consulting Limited', 'gen', []],
-  ['11:35', 25, 'International keynote address', 'Danny McCoy, CEO, Ibec', 'gen', []],
+  ['11:25', 10, 'Agentic Leaders. Human Futures. Navigating the risks, responsibilities and realities of AI in the workplace', 'Joanne Bondin, Director, misco Consulting Limited', '', []],
+  ['11:35', 25, 'International keynote address', 'Danny McCoy, CEO, Ibec', '', []],
   ['12:00', 35, 'Panel discussion 2: Enabling AI adoption: the support ecosystem for SMEs', 'Moderated by Kevin Spiteri', 'p2', [
     'Dr Joseph Gerada, Regulator, Family Business Office',
     'Joseph Darmanin, Chief Business Officer, MDB',
@@ -158,7 +158,7 @@ const AGENDA = [
     'Fabrizio Farrugia, Senior Manager, Information and Communication Technologies Unit, Malta Business Registry',
     'Alexander Vella, Malta Enterprise Representative',
   ]],
-  ['12:35', 45, 'Interactive presentation', 'Prof. Alexiei Dingli, Consultant', 'gen', []],
+  ['12:35', 45, 'Interactive presentation', 'Prof. Alexiei Dingli, Consultant', 'ad', []],
   ['13:20', 10, 'Concluding remarks', 'Joseph Farrugia, Advisor to Malta Employers', '', []],
   ['13:30', 60, 'Networking lunch', '', '', []],
 ];
@@ -170,11 +170,11 @@ const MEETUP_SUGGESTIONS = [
 ];
 
 // Where audience questions can be sent. key => label
+// Organiser's decision (16 Nov 2026): questions only for the two panels and Prof. Dingli's presentation.
 const QA_SESSIONS = [
   'p1'  => 'Panel 1: Preparing for new skills in a post-AI era',
   'p2'  => 'Panel 2: Enabling AI adoption, the support ecosystem for SMEs',
-  'bp'  => 'Best practices in business',
-  'gen' => 'Keynotes and other speakers',
+  'ad'  => 'Prof. Alexiei Dingli: interactive presentation',
 ];
 
 // ---------------------------------------------------------------------------

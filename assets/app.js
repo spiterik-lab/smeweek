@@ -283,7 +283,7 @@ function screen(){
 // HOST: audience questions for the moderator
 // ==========================================================
 function host(){
-  let key=store.get("hostKey")||"", session=store.get("hostSession")||CFG.qa[0].key, timer=0, ai=false;
+  let key=store.get("hostKey")||"", session=CFG.qa.some(s=>s.key===store.get("hostSession"))?store.get("hostSession"):CFG.qa[0].key, timer=0, ai=false;
   const tabs=$("hostTabs");
   for(const s of CFG.qa){ const b=el("button",null,s.label.split(":")[0]); b.type="button"; b.dataset.s=s.key; b.title=s.label;
     b.onclick=()=>{ session=s.key; store.set("hostSession",session); $("hostSummary").textContent=""; draw(); }; tabs.append(b); }
