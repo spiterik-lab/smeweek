@@ -14,6 +14,10 @@ const ANTHROPIC_API_KEY = '';
 // A password chosen that way is kept (as a hash) in the data folder and replaces the one in this file.
 const ADMIN_RESET_HASH  = '41db4c8e2cf40871a18f578480ac9debeb5938b5baf79d9592faad6bf83fc2bc';
 const ADMIN_RESET_UNTIL = '2026-11-30';
+// Fresh start: when this value changes, the app (once, on its next visit) moves all profiles, accounts, requests,
+// messages, questions and poll votes into a private backup folder inside the data folder and starts empty.
+// Settings (AI key, organiser password, email) are kept. Set on 16 Nov 2026 at the organiser's request.
+const FRESH_START_ID = '2026-11-16';
 const ADMIN_KEY_HASH = '9c021713ee32535b4595481b1df0a37e122dd5235f8b650b4464a10ac93534ab';
 
 // Event title shown on the pages.

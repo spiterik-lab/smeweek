@@ -107,7 +107,40 @@ function migrate_from_v1(): void {
   }
   flock($lock, LOCK_UN); fclose($lock);
 }
+$wasInstalled = is_file(DATA_DIR . '/.v2');
 migrate_from_v1();
+
+/**
+ * Fresh start (organiser's instruction, 16 Nov 2026): everyone signs up again on Version 2.
+ * Runs once per FRESH_START_ID on a site that was already in use: every file holding people's data is MOVED
+ * (not deleted) into a private backup folder inside the data folder, and the app starts empty.
+ * Kept: settings (AI key, organiser password, email settings) and the notification keys.
+ * A brand-new install only records the marker. To clear again later, change FRESH_START_ID in config.php.
+ */
+function fresh_start(bool $wasInstalled): void {
+  $id = preg_replace('/[^a-z0-9\-]/i', '', getenv('SMEWEEK_FRESH_ID') ?: FRESH_START_ID);
+  if ($id === '' || is_file(DATA_DIR . "/.fresh-$id")) return;
+  $lock = fopen(DATA_DIR . '/.fresh.lock', 'c'); if (!$lock) return;
+  flock($lock, LOCK_EX);
+  if (!is_file(DATA_DIR . "/.fresh-$id")) {
+    $moved = [];
+    if ($wasInstalled) {
+      $v = (int)(read_store('people', ['v' => 0])['v'] ?? 0);
+      $dir = DATA_DIR . "/backup-before-fresh-start-$id-" . bin2hex(random_bytes(4));
+      if (@mkdir($dir, 0700, true)) {
+        @file_put_contents("$dir/.htaccess", "Require all denied\n");
+        foreach (['people', 'accounts', 'contacts', 'declined', 'messages', 'reads', 'notifs', 'push', 'flags', 'questions', 'polls',
+                  'visits', 'icebreakers', 'insight', 'oauth', 'maillog', 'ratelimit'] as $f)
+          if (is_file(DATA_DIR . "/$f.json") && @rename(DATA_DIR . "/$f.json", "$dir/$f.json")) $moved[] = $f;
+        // Phones that still hold an old copy of the room must notice the change, so the version number moves on.
+        file_put_contents(DATA_DIR . '/people.json', json_encode(['v' => $v + 1, 'people' => []]), LOCK_EX);
+      } else { flock($lock, LOCK_UN); fclose($lock); return; } // no backup, no clearing: try again on the next request
+    }
+    file_put_contents(DATA_DIR . "/.fresh-$id", json_encode(['at' => date('c'), 'moved' => $moved]));
+  }
+  flock($lock, LOCK_UN); fclose($lock);
+}
+fresh_start($wasInstalled);
 
 /** Simple per-visitor rate limit (IP is hashed, never stored raw). */
 function ip_hash(): string { $ip = $_SERVER['HTTP_CF_CONNECTING_IP'] ?? $_SERVER['REMOTE_ADDR'] ?? '0'; return substr(hash('sha256', $ip . ADMIN_KEY_HASH), 0, 16); }
