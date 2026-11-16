@@ -206,7 +206,7 @@ const LEVELS = [[0, 'Spark'], [120, 'Star'], [280, 'Navigator'], [450, 'Connecto
 
 // ---------------------------------------------------------------------------
 // PRIVACY AND CONSENT (GDPR and EU AI Act transparency)
-// DRAFT: confirm with Malta Employers and the compliance consultant before speakers sign up.
+// Approved for use by the organiser on 16 Nov 2026.
 // The full notice is privacy.html. If you change who does what, or how long data is kept,
 // change it here AND in privacy.html, and raise NOTICE_VERSION so new consents are recorded against it.
 // ---------------------------------------------------------------------------

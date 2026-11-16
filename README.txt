@@ -60,7 +60,7 @@ PRIVACY NOTES
     report box (both people, for a connection). Unique phones that opened the app are counted (hashed).
   - Privacy: full notice in privacy.html; consent wording, pop-up and retention in event.php (keep both in step,
     raise NOTICE_VERSION when the wording changes). Each profile records when consent was given and the notice version.
-    AI output is labelled in the app (EU AI Act Art. 50). DRAFT until Malta Employers and the compliance consultant confirm.
+    AI output is labelled in the app (EU AI Act Art. 50). Approved for use by the organiser on 16 Nov 2026.
   - "Clear all profiles" also deletes all connections and visit counts. "Clear all questions" deletes the Q&A.
 
 LIVE POLLS (optional add-on)
