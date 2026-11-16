@@ -236,6 +236,11 @@ function screen(){
   $("btnMailTest").addEventListener("click",async()=>{ $("mailTestState").textContent="Sending…";
     try{ await api("admin",{key,op:"testmail",to:$("mailTo").value}); $("mailTestState").textContent="Sent. Check that inbox (and its spam folder)."; }
     catch(err){ $("mailTestState").textContent="Not sent: "+err.message; } });
+  $("btnMailLog").addEventListener("click",async()=>{ const box=$("mailLog"); box.textContent="Loading…";
+    try{ const j=await api("admin",{key,op:"maillog"}); box.textContent=""; if(!j.log.length) box.textContent="No emails have been attempted yet.";
+      for(const m of j.log){ const d=document.createElement("div"); const t=new Date(m.at*1000).toLocaleString([], {day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"});
+        d.textContent=`${t} · ${m.kind==="reset"?"Password reset":"Test"} to ${m.to} · ${m.ok?"Sent"+(m.via==="mailbox"?" through the mailbox":" by the web server (may not arrive)"):"NOT sent: "+m.why}`; box.append(d); } }
+    catch(err){ box.textContent=err.message; } });
   $("resetForm").addEventListener("submit",async e=>{ e.preventDefault();
     if($("resetPw").value!==$("resetPw2").value){ $("resetState").textContent="The two passwords are not the same."; return; }
     try{ await api("admin_reset",{code:$("resetCode").value,password:$("resetPw").value});

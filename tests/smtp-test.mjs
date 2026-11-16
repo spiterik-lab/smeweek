@@ -52,6 +52,10 @@ try {
   const m = body.match(/\?reset=(\w+)&u=(\w+)/); ok(!!m, 'email has the reset link', body.slice(0, 200));
   ok((await api('reset_request', { email: 'nobody@x.example' })).ok && mails.length === 2, 'unknown address: same answer, no email');
   ok(!readFileSync(join(data, 'settings.json'), 'utf8').includes('pat@'), 'settings hold no attendee data');
+  const lg = (await adm('maillog')).log;
+  ok(lg[0].kind === 'reset' && !lg[0].ok && /No account/.test(lg[0].why) && lg[0].to === 'no***@x.example', 'log explains a reset for an unknown address', JSON.stringify(lg[0]));
+  ok(lg[1].kind === 'reset' && lg[1].ok && lg[1].via === 'mailbox' && lg[1].to === 'pa***@x.example', 'log shows the sent reset, address partly hidden', JSON.stringify(lg[1]));
+  ok(lg.some(m => m.kind === 'test' && !m.ok) && !JSON.stringify(lg).includes('pat@'), 'log keeps failures and no full addresses');
   ok((await adm('setmail', { user: '' })).ok && (await adm('check')).mail.set === false, 'can be removed');
 } finally { php.kill(); smtp.close(); }
 console.log(`${pass} passed, ${failN} failed`); process.exit(failN ? 1 : 0);

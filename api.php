@@ -278,6 +278,15 @@ function send_mail_why(string $to, string $subject, string $text): string {
   return @mail($to, '=?UTF-8?B?' . base64_encode($subject) . '?=', $text, $headers, '-f' . $from) ? '' : 'The web server refused to send the email.';
 }
 function send_mail(string $to, string $subject, string $text): bool { return send_mail_why($to, $subject, $text) === ''; }
+/** Organiser's email log: the last 30 attempts, with the address partly hidden, so a missing email can be explained. */
+function mail_log(string $kind, string $to, string $why): void {
+  [$l, $dom] = array_pad(explode('@', $to, 2), 2, '');
+  $masked = mb_substr($l, 0, 2) . '***@' . $dom;
+  with_store('maillog', function (&$d) use ($kind, $masked, $why) {
+    $d[] = ['at' => time(), 'kind' => $kind, 'to' => $masked, 'ok' => $why === '', 'why' => $why, 'via' => smtp_cfg()['user'] !== '' ? 'mailbox' : 'server'];
+    $d = array_slice($d, -30);
+  }, []);
+}
 
 // ---------- notifications ----------
 function person_name(array $P, string $id): string { return $P[$id]['name'] ?? 'Someone'; }
@@ -551,11 +560,12 @@ switch ($action) {
     if ($id) {
       $t = bin2hex(random_bytes(20));
       with_store('accounts', function (&$d) use ($id, $t) { $d['byId'][$id]['reset'] = [hash('sha256', $t), time() + 3600]; }, EMPTY_ACC);
-      send_mail($email, 'Reset your SME Constellation password',
+      $why = send_mail_why($email, 'Reset your SME Constellation password',
         "Hello,\n\nSomeone asked to reset the password for your SME Constellation account (" . EVENT_NAME . ").\n\n"
         . "Open this link within one hour to choose a new password:\n" . app_url() . "?reset=$t&u=$id\n\n"
         . "If this wasn't you, ignore this email and your password stays as it is.\n\n" . CONTROLLER);
-    }
+      mail_log('reset', $email, $why);
+    } elseif (filter_var($email, FILTER_VALIDATE_EMAIL)) mail_log('reset', $email, 'No account on this site uses this address, so nothing was sent.');
     out(['ok' => true]); // same answer whether or not the email exists
   }
 
@@ -986,10 +996,12 @@ switch ($action) {
       with_store('settings', function (&$st) use ($host, $port, $user, $pass) { $st['smtp'] = ['host' => $host, 'port' => $port, 'user' => $user, 'pass' => $pass]; }, []);
       out(['ok' => true, 'set' => true]);
     }
+    if ($op === 'maillog') out(['ok' => true, 'log' => array_reverse(read_store('maillog', []))]);
     if ($op === 'testmail') {
       limit('testmail', 10, 600);
       $to = clean_email($body['to'] ?? ''); if ($to === '') fail('Enter the address to send the test to.');
       $why = send_mail_why($to, 'SME Constellation test email', "This is a test from the SME Constellation organiser panel.\n\nIf you can read this, password reset emails will arrive too.\n");
+      mail_log('test', $to, $why);
       if ($why !== '') fail($why);
       out(['ok' => true, 'via' => smtp_cfg()['user'] !== '' ? 'mailbox' : 'server']);
     }
@@ -1011,7 +1023,7 @@ switch ($action) {
     }
     if ($op === 'clear') {
       $n = with_store('people', function (&$d) { $n = count($d['people']); $d = ['v' => $d['v'] + 1, 'people' => []]; return $n; }, $empty);
-      foreach (['icebreakers', 'insight', 'contacts', 'declined', 'visits', 'accounts', 'messages', 'reads', 'notifs', 'push', 'flags', 'oauth'] as $f) @unlink(DATA_DIR . "/$f.json");
+      foreach (['icebreakers', 'insight', 'contacts', 'declined', 'visits', 'accounts', 'messages', 'reads', 'notifs', 'push', 'flags', 'oauth', 'maillog'] as $f) @unlink(DATA_DIR . "/$f.json");
       out(['ok' => true, 'deleted' => $n]);
     }
     // Rollback helper: writes the Version 2 profiles and requests into Version 1's folder, in Version 1's format,
