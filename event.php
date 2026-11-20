@@ -166,7 +166,7 @@ const AGENDA = [
 //   file    = a video inside the app, e.g. 'assets/video/theme.mp4' (keep it small: 720p, under about 25 MB)
 //   youtube = a YouTube video ID instead, e.g. 'dQw4w9WgXcQ' (used only when file is empty)
 //   poster  = optional still image shown before it plays
-const THEME_VIDEO = ['file' => '', 'youtube' => '', 'poster' => '', 'title' => 'Watch the conference theme video'];
+const THEME_VIDEO = ['file' => 'assets/video/theme.mp4', 'youtube' => '', 'poster' => 'assets/video/theme-poster.jpg', 'title' => 'Watch the conference theme video'];
 
 // Quick replies offered in a chat between two matched people, to agree where to meet.
 const MEETUP_SUGGESTIONS = [
