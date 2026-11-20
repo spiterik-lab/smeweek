@@ -427,3 +427,8 @@ details>summary.linkbtn::-webkit-details-marker{display:none}
 @media (min-width:960px){.people-grid{grid-template-columns:minmax(0,1.15fr) minmax(0,1fr)}.people-grid>*{min-width:0}}
 .topbar img{flex:0 1 auto;min-width:0;max-width:38vw}
 .topbar .xp-pill,.topbar .iconbtn{flex:none}
+
+/* Conference theme video */
+.video-card{background:linear-gradient(135deg,rgba(232,62,111,.22),rgba(232,62,111,.05));border-color:rgba(232,62,111,.45);margin-bottom:10px}
+.video-card svg{color:#ffc2d3}
+.theme-video{display:block;width:100%;aspect-ratio:16/9;border:0;border-radius:16px;background:#000;margin-top:12px}

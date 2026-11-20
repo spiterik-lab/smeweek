@@ -495,11 +495,15 @@ switch ($action) {
     foreach (INTERESTS as $k => [$give, $get, $noun]) $interests[] = ['key' => $k, 'give' => $give, 'get' => $get, 'noun' => $noun, 'getOnly' => $give === ''];
     $agenda = array_map(fn($a) => ['time' => $a[0], 'mins' => $a[1], 'title' => $a[2], 'who' => $a[3], 'qa' => $a[4], 'people' => $a[5] ?? []], AGENDA);
     $qa = []; foreach (QA_SESSIONS as $k => $label) $qa[] = ['key' => $k, 'label' => $label];
+    $tv = THEME_VIDEO; $video = null;
+    if (getenv('SMEWEEK_TEST_VIDEO')) $tv['file'] = getenv('SMEWEEK_TEST_VIDEO'); // tests only
+    if ($tv['file'] !== '' && is_file(__DIR__ . '/' . $tv['file'])) $video = ['file' => $tv['file'] . '?v=' . filemtime(__DIR__ . '/' . $tv['file']), 'poster' => $tv['poster'], 'title' => $tv['title']];
+    elseif (preg_match('/^[\w\-]{6,20}$/', $tv['youtube'])) $video = ['youtube' => $tv['youtube'], 'poster' => $tv['poster'], 'title' => $tv['title']];
     $kv = fn(array $a) => array_map(fn($k, $v) => ['key' => $k, 'label' => is_array($v) ? $v[0] : $v, 'short' => is_array($v) ? ($v[1] ?? $v[0]) : $v], array_keys($a), $a);
     out(['ok' => true, 'version' => APP_VERSION, 'title' => EVENT_TITLE, 'eventName' => EVENT_NAME, 'venue' => EVENT_VENUE, 'date' => EVENT_DATE,
          'interests' => $interests, 'networking' => NETWORKING_LABEL, 'sectors' => SECTORS, 'orgTypes' => $kv(ORG_TYPES), 'stages' => $kv(AI_STAGES),
          'topics' => $kv(TOPICS), 'maxTopics' => MAX_TOPICS, 'meet' => $kv(MEET), 'meetups' => MEETUP_SUGGESTIONS,
-         'levels' => LEVELS, 'agenda' => $agenda, 'qa' => $qa, 'consent' => CONSENT_TEXT, 'reportConsent' => REPORT_CONSENT_TEXT,
+         'levels' => LEVELS, 'agenda' => $agenda, 'qa' => $qa, 'video' => $video, 'consent' => CONSENT_TEXT, 'reportConsent' => REPORT_CONSENT_TEXT,
          'retention' => RETENTION_TEXT, 'marketingConsent' => MARKETING_CONSENT_TEXT, 'consentFootnote' => CONSENT_FOOTNOTE,
          'privacyEmail' => PRIVACY_EMAIL, 'controller' => CONTROLLER, 'noticeVersion' => NOTICE_VERSION, 'intro' => ['title' => INTRO_TITLE, 'text' => INTRO_TEXT],
          'requestDefault' => REQUEST_DEFAULT, 'polls' => $pollsOn, 'ai' => ai_on(),

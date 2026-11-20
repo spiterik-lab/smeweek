@@ -1,7 +1,7 @@
 /* SME Constellation 2.0 service worker: makes the app installable, shows push notifications,
    and keeps the app's own files on the phone so it opens quickly on conference Wi-Fi.
    Nothing from api.php is ever stored here. */
-const CACHE = "smec-v2-5";
+const CACHE = "smec-v2-6";
 const SHELL = ["./", "assets/v2/app.css", "assets/v2/core.js", "assets/v2/flow.js", "assets/v2/app.js", "assets/match.js",
   "assets/img/brand-logos.png", "assets/img/swash.webp", "assets/img/icon-192.png", "assets/img/mark.svg", "assets/img/valletta-a.webp", "assets/img/valletta-b.webp", "assets/brief.json"];
 
@@ -12,7 +12,7 @@ self.addEventListener("activate", e => {
 // Network first, falling back to the saved copy when the connection drops.
 self.addEventListener("fetch", e => {
   const u = new URL(e.request.url);
-  if (e.request.method !== "GET" || u.origin !== location.origin || u.pathname.endsWith(".php") || u.pathname.endsWith("sw.js")) return;
+  if (e.request.method !== "GET" || u.origin !== location.origin || u.pathname.endsWith(".php") || u.pathname.endsWith("sw.js") || u.pathname.endsWith(".mp4") || e.request.headers.has("range")) return; // videos go straight to the network
   e.respondWith(fetch(e.request).then(r => {
     if (r.ok && r.type === "basic") { const copy = r.clone(); caches.open(CACHE).then(c => c.put(e.request, copy)).catch(() => {}); }
     return r;

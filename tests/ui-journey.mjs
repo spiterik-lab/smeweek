@@ -17,7 +17,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const shots = process.argv[2] || path.join(tmpdir(), 'smec-shots'); mkdirSync(shots, { recursive: true });
 const data = mkdtempSync(path.join(tmpdir(), 'smec-ui-'));
 const port = 8200 + Math.floor(Math.random() * 500), base = `http://127.0.0.1:${port}/`;
-const php = spawn('php', ['-S', `127.0.0.1:${port}`, '-t', root], { env: { ...process.env, SMEWEEK_DATA_DIR: data, SMEWEEK_MAIL_LOG: '1', SMEWEEK_ADMIN_HASH: createHash('sha256').update('test-organiser').digest('hex') }, stdio: 'ignore' });
+const php = spawn('php', ['-S', `127.0.0.1:${port}`, '-t', root], { env: { ...process.env, SMEWEEK_DATA_DIR: data, SMEWEEK_MAIL_LOG: '1', SMEWEEK_TEST_VIDEO: 'tests/fixtures/test-video.mp4', SMEWEEK_ADMIN_HASH: createHash('sha256').update('test-organiser').digest('hex') }, stdio: 'ignore' });
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 let pass = 0, fail = 0; const errors = [];
 const ok = (c, name) => { c ? pass++ : fail++; console.log((c ? 'PASS ' : 'FAIL ') + name); };
@@ -166,7 +166,11 @@ try {
   const ag = await page.locator('#view').textContent();
   ok(/Danny McCoy/.test(ag) && !/McKoy/.test(ag), 'agenda shows Danny McCoy spelt correctly');
   ok(/Agentic Leaders\. Human Futures\./.test(ag), 'agenda shows the full title of Joanne Bondin\'s talk');
-  await tap('.brief-card'); await page.waitForSelector('.reader h2'); await shot('24-brief');
+  await tap('.video-card'); await page.waitForSelector('video.theme-video');
+  ok(await page.evaluate(() => new Promise(r => { const v = document.querySelector('video.theme-video'); const done = () => r(v.videoWidth > 0 && v.duration > 1); v.readyState >= 1 ? done() : (v.onloadedmetadata = done, v.onerror = () => r(false), setTimeout(() => r(false), 6000)); })), 'theme video opens and loads');
+  await shot('23b-video'); await page.locator('.sheet .close').click(); await page.waitForSelector('.sheet', { state: 'detached' });
+  ok(!(await page.$('video.theme-video')), 'theme video closes');
+  await tap('.brief-card:not(.video-card)'); await page.waitForSelector('.reader h2'); await shot('24-brief');
   await page.locator('.sheet .close').click(); await page.waitForSelector('.sheet', { state: 'detached' });
 
   // ---- live ----

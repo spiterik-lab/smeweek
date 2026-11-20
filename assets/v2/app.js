@@ -570,6 +570,7 @@ function agenda() {
   const now = currentItem();
   view.replaceChildren(
     h("div", "stack tight", h("p", "eyebrow", "Tuesday 24 November 2026"), h("h1", "serif"), h("p", "small dim", S.cfg.venue)),
+    S.cfg.video ? h("button", {class: "brief-card video-card", type: "button", onclick: openVideo}, I("play"), h("span", "grow", h("b", {style: {display: "block"}}, S.cfg.video.title), h("span", "small dim", "SME National Forum 2026: Making AI work for SMEs"))) : null,
     h("button", {class: "brief-card", type: "button", onclick: openBrief}, I("doc"), h("span", "grow", h("b", {style: {display: "block"}}, "Read the conference brief"), h("span", "small dim", "Making AI work for SMEs: from policy to practice. A 5-minute read.")), mission("brief").done ? I("check") : h("span", "xpchip", "+20 XP")),
     h("div", null, S.cfg.agenda.map(a => h("div", "ag" + (a === now ? " now" : ""),
       h("div", "ag-time", a.time, a === now ? h("div", {style: {"margin-top": "6px"}}, h("span", "tag flag live", "Now")) : null),
@@ -577,6 +578,15 @@ function agenda() {
         a.people.length ? h("details", null, h("summary", null, a.people.length + " speakers"), h("ul", null, a.people.map(t => { const i = t.indexOf(","); return h("li", null, h("b", null, i < 0 ? t : t.slice(0, i)), i < 0 ? "" : t.slice(i)); }))) : null,
         a.qa ? h("button", {class: "linkbtn tiny", type: "button", style: {"margin-top": "8px"}, onclick: () => { S.qaSession = a.qa; go("live"); }}, "Ask a question") : null)))));
   const t = view.querySelector("h1.serif"); t.style.fontSize = "clamp(34px,9vw,44px)"; t.append(span("The <em>morning.</em>"));
+}
+function openVideo() {
+  const v = S.cfg.video; let player;
+  sheet(box => {
+    if (v.file) player = h("video", {class: "theme-video", src: v.file, controls: "", playsinline: "", preload: "metadata", poster: v.poster || null});
+    else player = h("iframe", {class: "theme-video", src: "https://www.youtube-nocookie.com/embed/" + encodeURIComponent(v.youtube) + "?rel=0&playsinline=1", title: v.title, allow: "accelerometer; autoplay; encrypted-media; picture-in-picture; fullscreen", allowfullscreen: "", referrerpolicy: "strict-origin-when-cross-origin"});
+    box.append(h("h2", "h2", "Conference theme video"), player);
+    if (v.file) player.play().catch(() => {});
+  }, {label: "Conference theme video", onClose() { if (player && player.pause) player.pause(); if (player) player.removeAttribute("src"); }});
 }
 async function openBrief() {
   let b; try { b = await (await fetch("assets/brief.json")).json(); } catch { return toast("The brief could not be loaded. Try again.", {warn: true}); }

@@ -144,7 +144,7 @@ const AGENDA = [
   ['10:35', 30, 'Coffee break', '', '', []],
   ['11:05', 20, 'Best practices in business and private sector: part 2', 'Moderated by Prof. Alexiei Dingli', '', [
     'Dr Vince Vella, CTO/COO, Computime Business Software & FinTech',
-    'Jonathan Dalli, CEO, Concept Stadium',
+    'Jonathan Dalli, Founder & CEO, Concept Stadium',
     'Andrew Schembri, Chair of the Digitalisation Working Group within the Malta Institute of Accountants, and Partner, PwC Malta',
   ]],
   ['11:25', 10, 'Agentic Leaders. Human Futures. Navigating the risks, responsibilities and realities of AI in the workplace', 'Joanne Bondin, Director, misco Consulting Limited', '', []],
@@ -162,6 +162,12 @@ const AGENDA = [
   ['13:20', 10, 'Concluding remarks', 'Joseph Farrugia, Advisor to Malta Employers', '', []],
   ['13:30', 60, 'Networking lunch', '', '', []],
 ];
+// Conference theme video, shown as a card at the top of the Agenda tab. Leave both empty to hide the card.
+//   file    = a video inside the app, e.g. 'assets/video/theme.mp4' (keep it small: 720p, under about 25 MB)
+//   youtube = a YouTube video ID instead, e.g. 'dQw4w9WgXcQ' (used only when file is empty)
+//   poster  = optional still image shown before it plays
+const THEME_VIDEO = ['file' => '', 'youtube' => '', 'poster' => '', 'title' => 'Watch the conference theme video'];
+
 // Quick replies offered in a chat between two matched people, to agree where to meet.
 const MEETUP_SUGGESTIONS = [
   'Shall we meet at the coffee break, 10:35?',
