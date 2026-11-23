@@ -210,7 +210,7 @@ function app() {
       h("button", {class: "xp-pill", type: "button", id: "xpPill", "aria-label": "Your level and missions", onclick: () => go("me")}, h("span", "ring", I("star")), h("span", null, h("b"), h("i", {style: {"font-style": "normal"}}))),
       h("button", {class: "iconbtn", type: "button", id: "bell", "aria-label": "Notifications", onclick: openNotifs}, I("bell"), h("span", {class: "pip", hidden: true})))),
     view, dock));
-  chrome(); go(S.tab || "home"); startLoops(); loadPoll().catch(() => {});
+  chrome(); go(S.tab || "home"); startLoops(); if (S.cfg.polls) loadPoll().catch(() => {});
   if (standalone() && !mission("install").done) authed("flag", {key: "install"}).then(() => doSync()).catch(() => {});
   pushState().then(async on => { if (on) { const sub = await currentSub(); if (sub) authed("push_sub", {sub: sub.toJSON()}).catch(() => {}); } });
   handleOpen();

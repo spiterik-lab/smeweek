@@ -204,7 +204,6 @@ const MISSIONS = [
   'speaker'  => ['Match with a speaker',                              40],
   'message'  => ['Send a message to a match',                         20],
   'question' => ['Ask a question from the floor',                     30],
-  'poll'     => ['Vote in a live poll',                               20],
   'brief'    => ['Read the conference brief',                         20],
 ];
 // [XP needed, level name]
@@ -250,9 +249,9 @@ const REQUEST_DEFAULT = "I'd like to catch up with you during the forum.";
 // ============================================================================
 // LIVE POLLS (optional add-on). Set to false to switch polls off everywhere:
 // the poll card, the host controls and the results screen all disappear.
-// To remove polls completely, also delete polls.php, polls.html and assets/polls.js.
+// Polls were removed on 23 Nov 2026 (polls.php, polls.html and assets/polls.js deleted). The questions below are kept for reference only.
 // ============================================================================
-const ENABLE_POLLS = true;
+const ENABLE_POLLS = false;
 
 // key => [question, [options...], how many options each person may pick]
 // Keep keys stable once voting has started. DRAFT wording: confirm with Anton.
